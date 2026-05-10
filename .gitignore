@@ -1,0 +1,40 @@
+# Dependencies and package-manager caches
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/
+
+# Build and test scratch data
+.build/
+coverage/
+.vite/
+*.log
+
+# Local/private issue material and generated investigations
+issues/
+
+# OS and editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local environment and agent/tooling state
+.env
+.env.*
+!.env.example
+.codex/
+.agents/
+.claude/
+.cursor/
+.gemini/
+.devcontainer/
+
+# Cloud/service local config that should not be published accidentally
+.aws/
+.azure/
+.gcloud/
+firebase-debug.log
+

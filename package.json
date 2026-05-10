@@ -1,0 +1,25 @@
+{
+  "name": "markdown-to-word-offline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A fully offline, browser-only Markdown to DOCX converter bundled into one HTML file.",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "node scripts/build-single-file.mjs && node scripts/validate-offline-build.mjs",
+    "check:offline": "node scripts/validate-offline-build.mjs",
+    "test": "vitest run && node scripts/validate-offline-build.mjs --if-present"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "markdown-it": "^14.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "@types/markdown-it": "^14.1.2",
+    "esbuild": "^0.25.4",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.1.3"
+  }
+}
