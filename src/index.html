@@ -3,51 +3,60 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Markdown to Word Offline</title>
+    <title data-i18n="app.title">Markdown to Word Offline</title>
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>
-    <a class="skip-link" href="#markdown-input">Skip to editor</a>
-    <a class="github-ribbon" href="https:&#x2f;&#x2f;github.com&#x2f;sponsors&#x2f;pascal-gujer" target="_blank" rel="noopener noreferrer" aria-label="Sponsor this project on GitHub">
+    <a class="skip-link" href="#markdown-input" data-i18n="a11y.skip_to_editor">Skip to editor</a>
+    <a class="github-ribbon" href="https:&#x2f;&#x2f;github.com&#x2f;sponsors&#x2f;pascal-gujer" target="_blank" rel="noopener noreferrer" data-i18n-aria-label="sponsor.aria" aria-label="Sponsor this project on GitHub">
       <svg class="github-ribbon-heart" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
         <path d="M8 14.25l-.78-.7C3.04 9.8.5 7.52.5 4.75A3.25 3.25 0 0 1 3.8 1.5c1.56 0 2.57.9 3.2 1.72C7.63 2.4 8.64 1.5 10.2 1.5a3.25 3.25 0 0 1 3.3 3.25c0 2.77-2.54 5.05-6.72 8.8l-.78.7z"/>
       </svg>
-      <span>Sponsor on GitHub</span>
+      <span data-i18n="sponsor.label">Sponsor on GitHub</span>
     </a>
     <div class="app-shell">
       <header class="app-header">
         <div class="brand">
           <div class="brand-mark" aria-hidden="true">MD</div>
           <div>
-            <h1>Markdown to Word Offline</h1>
-            <p class="subtitle">Browser-only Markdown to DOCX conversion for restricted systems.</p>
+            <h1 data-i18n="brand.title">Markdown to Word Offline</h1>
+            <p class="subtitle" data-i18n="brand.subtitle">Browser-only Markdown to DOCX conversion for restricted systems.</p>
           </div>
         </div>
-        <div class="privacy-pill">Files are processed locally in your browser and are not uploaded.</div>
+        <div class="header-controls">
+          <label class="language-label" for="language-select" data-i18n="language.label">Language</label>
+          <select class="select-control language-select" id="language-select">
+            <option value="en" data-i18n="language.option.en">English</option>
+            <option value="de" data-i18n="language.option.de">Deutsch</option>
+            <option value="fr" data-i18n="language.option.fr">Français</option>
+            <option value="it" data-i18n="language.option.it">Italiano</option>
+          </select>
+          <div class="privacy-pill" data-i18n="privacy.pill">Files are processed locally in your browser and are not uploaded.</div>
+        </div>
       </header>
 
       <main id="app" class="workspace" aria-live="polite">
         <section class="panel step-panel editor-panel" aria-labelledby="step-1-title">
           <div class="panel-header">
             <div>
-              <span class="step-kicker">Step 1</span>
-              <h2 id="step-1-title">Paste or Load Markdown</h2>
+              <span class="step-kicker" data-i18n="step.1.kicker">Step 1</span>
+              <h2 id="step-1-title" data-i18n="step.1.title">Paste or Load Markdown</h2>
             </div>
             <div class="panel-actions">
-              <button class="button" id="load-markdown-button" type="button">Load File</button>
-              <button class="button" id="sample-button" type="button">Sample</button>
-              <button class="button danger" id="clear-button" type="button">Clear</button>
+              <button class="button" id="load-markdown-button" type="button" data-i18n="button.load_file">Load File</button>
+              <button class="button" id="sample-button" type="button" data-i18n="button.sample">Sample</button>
+              <button class="button danger" id="clear-button" type="button" data-i18n="button.clear">Clear</button>
             </div>
           </div>
           <div class="panel-body">
             <input id="markdown-file-input" class="sr-only" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" />
-            <label class="field-label" for="markdown-input">Markdown input</label>
-            <textarea id="markdown-input" spellcheck="false" placeholder="# Paste Markdown here"></textarea>
+            <label class="field-label" for="markdown-input" data-i18n="field.markdown_input">Markdown input</label>
+            <textarea id="markdown-input" spellcheck="false" data-i18n-placeholder="placeholder.markdown_input" placeholder="# Paste Markdown here"></textarea>
             <div class="editor-meta">
               <span id="input-stats">0 characters</span>
               <label class="toggle">
                 <input id="live-preview-toggle" type="checkbox" checked />
-                <span>Live preview</span>
+                <span data-i18n="toggle.live_preview">Live preview</span>
               </label>
             </div>
           </div>
@@ -56,30 +65,30 @@
         <section class="panel step-panel preview-panel" aria-labelledby="preview-title">
           <div class="panel-header">
             <div>
-              <span class="step-kicker">Preview</span>
-              <h2 id="preview-title">Rendered Markdown</h2>
+              <span class="step-kicker" data-i18n="preview.kicker">Preview</span>
+              <h2 id="preview-title" data-i18n="preview.title">Rendered Markdown</h2>
             </div>
-            <button class="button" id="refresh-preview-button" type="button">Refresh</button>
+            <button class="button" id="refresh-preview-button" type="button" data-i18n="button.refresh">Refresh</button>
           </div>
           <div class="panel-body preview-wrap">
-            <article id="preview" class="preview empty-state">Preview appears here.</article>
+            <article id="preview" class="preview empty-state" data-i18n="preview.empty">Preview appears here.</article>
           </div>
         </section>
 
         <section class="panel step-panel template-panel" aria-labelledby="step-2-title">
           <div class="panel-header">
             <div>
-              <span class="step-kicker">Step 2</span>
-              <h2 id="step-2-title">Optional Style Template</h2>
+              <span class="step-kicker" data-i18n="step.2.kicker">Step 2</span>
+              <h2 id="step-2-title" data-i18n="step.2.title">Optional Style Template</h2>
             </div>
             <div class="panel-actions">
-              <button class="button" id="load-template-button" type="button">Load DOCX/DOTX</button>
-              <button class="button" id="clear-template-button" type="button">Clear Template</button>
+              <button class="button" id="load-template-button" type="button" data-i18n="button.load_template">Load DOCX/DOTX</button>
+              <button class="button" id="clear-template-button" type="button" data-i18n="button.clear_template">Clear Template</button>
             </div>
           </div>
           <div class="panel-body">
             <input id="template-file-input" class="sr-only" type="file" accept=".docx,.dotx,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.openxmlformats-officedocument.wordprocessingml.template" />
-            <div id="template-status" class="message">No template loaded. Sensible default Word styles will be generated.</div>
+            <div id="template-status" class="message" data-i18n="template.status.empty">No template loaded. Sensible default Word styles will be generated.</div>
             <div id="template-diagnostics" class="diagnostics"></div>
           </div>
         </section>
@@ -87,17 +96,17 @@
         <section class="panel step-panel export-panel" aria-labelledby="step-3-title">
           <div class="panel-header">
             <div>
-              <span class="step-kicker">Step 3</span>
-              <h2 id="step-3-title">Export DOCX</h2>
+              <span class="step-kicker" data-i18n="step.3.kicker">Step 3</span>
+              <h2 id="step-3-title" data-i18n="step.3.title">Export DOCX</h2>
             </div>
-            <button class="button primary" id="export-button" type="button">Export DOCX</button>
+            <button class="button primary" id="export-button" type="button" data-i18n="button.export_docx">Export DOCX</button>
           </div>
           <div class="panel-body">
-            <label class="field-label" for="filename-input">Output file name</label>
+            <label class="field-label" for="filename-input" data-i18n="field.output_file_name">Output file name</label>
             <input id="filename-input" class="text-input" type="text" value="converted-document.docx" />
             <div id="warnings" class="warnings" hidden></div>
             <div id="offline-check" class="message"></div>
-            <div id="export-status" class="message">Ready.</div>
+            <div id="export-status" class="message" data-i18n="status.ready">Ready.</div>
           </div>
         </section>
       </main>

@@ -35,7 +35,7 @@ export async function readTemplatePackage(data: ArrayBuffer | Uint8Array, fileNa
   try {
     zip = await JSZip.loadAsync(packageBytes);
   } catch (_error) {
-    throw new Error("The selected template is not a readable DOCX/DOTX ZIP package.");
+    throw new Error("error.template_unreadable");
   }
 
   const contentTypes = await readZipText(zip, "[Content_Types].xml");
@@ -46,7 +46,7 @@ export async function readTemplatePackage(data: ArrayBuffer | Uint8Array, fileNa
   const numberingXml = await readZipText(zip, "word/numbering.xml");
 
   if (!contentTypes && !documentXml && !stylesXml) {
-    throw new Error("The selected file does not look like a WordprocessingML template.");
+    throw new Error("error.template_invalid");
   }
 
   return {

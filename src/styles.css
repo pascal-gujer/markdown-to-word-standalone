@@ -39,16 +39,19 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
 
-button {
+button,
+select {
   cursor: pointer;
 }
 
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible,
 .skip-link:focus-visible {
   outline: 3px solid rgba(37, 99, 235, 0.35);
@@ -165,7 +168,39 @@ h1 {
   font-size: 0.96rem;
 }
 
+.header-controls {
+  display: grid;
+  grid-template-columns: auto minmax(132px, auto);
+  gap: 8px 12px;
+  align-items: center;
+  justify-items: end;
+}
+
+.language-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.select-control {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 32px 8px 10px;
+  color: var(--ink);
+  background: #ffffff;
+  font-weight: 800;
+}
+
+.language-select {
+  width: 100%;
+  min-width: 132px;
+}
+
 .privacy-pill {
+  grid-column: 1 / -1;
   max-width: 430px;
   border: 1px solid #b7e4dc;
   border-radius: var(--radius);
@@ -509,6 +544,10 @@ h1 {
     max-width: none;
   }
 
+  .header-controls {
+    justify-items: stretch;
+  }
+
   .editor-panel {
     grid-row: auto;
   }
@@ -530,7 +569,8 @@ h1 {
   }
 
   .panel-actions,
-  .panel-header .button {
+  .panel-header .button,
+  .select-control {
     width: 100%;
   }
 

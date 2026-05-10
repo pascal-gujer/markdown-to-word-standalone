@@ -1,6 +1,7 @@
 import { buildStyleMap } from "./docx/styleMapper";
 import { generateDocxBlob } from "./docx/generateDocx";
 import { readTemplateFile, type TemplateInfo } from "./docx/templateReader";
+import { applyI18nToDom, formatList, getCurrentLocale, hasTranslationKey, initializeI18n, setLocale, t, type TranslationVars } from "./i18n";
 import { parseMarkdown, type MarkdownParseResult } from "./markdown/parseMarkdown";
 import { installNetworkGuard, runOfflineSelfCheck } from "./security/offlineSelfCheck";
 import { ensureDocxFileName, formatInputStats, readTextFile, sampleMarkdown } from "./ui/editor";
@@ -11,12 +12,21 @@ type AppState = {
   markdown: string;
   parsed: MarkdownParseResult;
   template: TemplateInfo | null;
+  exportStatus: ExportStatus;
+};
+
+type ExportStatus = {
+  kind: "" | "error" | "ok" | "warn";
+  key?: string;
+  message?: string;
+  vars?: TranslationVars;
 };
 
 const elements = {
   markdownInput: byId<HTMLTextAreaElement>("markdown-input"),
   markdownFileInput: byId<HTMLInputElement>("markdown-file-input"),
   templateFileInput: byId<HTMLInputElement>("template-file-input"),
+  languageSelect: byId<HTMLSelectElement>("language-select"),
   loadMarkdownButton: byId<HTMLButtonElement>("load-markdown-button"),
   sampleButton: byId<HTMLButtonElement>("sample-button"),
   clearButton: byId<HTMLButtonElement>("clear-button"),
@@ -35,18 +45,28 @@ const elements = {
   exportStatus: byId<HTMLElement>("export-status"),
 };
 
-installNetworkGuard();
+initializeI18n();
+installNetworkGuard(() => t("error.network_disabled"));
 
 const state: AppState = {
   markdown: "",
   parsed: parseMarkdown(""),
   template: null,
+  exportStatus: { key: "status.ready", kind: "" },
 };
 
 bindEvents();
+applyStaticI18n();
 renderAll();
 
 function bindEvents(): void {
+  elements.languageSelect.value = getCurrentLocale();
+  elements.languageSelect.addEventListener("change", () => {
+    setLocale(elements.languageSelect.value, true);
+    applyStaticI18n();
+    renderAll();
+  });
+
   elements.markdownInput.addEventListener("input", () => {
     state.markdown = elements.markdownInput.value;
     updateParsed();
@@ -68,20 +88,20 @@ function bindEvents(): void {
       elements.markdownInput.value = state.markdown;
       updateParsed();
       renderAll();
-      setExportStatus(`Loaded ${file.name}.`, "ok");
+      setExportStatusKey("status.file_loaded", "ok", { fileName: file.name });
     } catch (error) {
-      setExportStatus(errorMessage(error), "error");
+      setExportError(error);
     } finally {
       elements.markdownFileInput.value = "";
     }
   });
 
   elements.sampleButton.addEventListener("click", () => {
-    state.markdown = sampleMarkdown;
+    state.markdown = sampleMarkdown(t);
     elements.markdownInput.value = state.markdown;
     updateParsed();
     renderAll();
-    setExportStatus("Sample Markdown loaded.", "ok");
+    setExportStatusKey("status.sample_loaded", "ok");
   });
 
   elements.clearButton.addEventListener("click", () => {
@@ -89,7 +109,7 @@ function bindEvents(): void {
     elements.markdownInput.value = "";
     updateParsed();
     renderAll();
-    setExportStatus("Ready.", "");
+    setExportStatusKey("status.ready", "");
   });
 
   elements.refreshPreviewButton.addEventListener("click", () => {
@@ -115,11 +135,11 @@ function bindEvents(): void {
     try {
       state.template = await readTemplateFile(file);
       renderTemplateState();
-      setExportStatus("Template loaded. Style mappings updated.", "ok");
+      setExportStatusKey("status.template_loaded", "ok");
     } catch (error) {
       state.template = null;
       renderTemplateState();
-      setExportStatus(errorMessage(error), "error");
+      setExportError(error);
     } finally {
       elements.templateFileInput.value = "";
     }
@@ -128,7 +148,7 @@ function bindEvents(): void {
   elements.clearTemplateButton.addEventListener("click", () => {
     state.template = null;
     renderTemplateState();
-    setExportStatus("Template cleared. Fallback styles will be used.", "");
+    setExportStatusKey("status.template_cleared", "");
   });
 
   elements.exportButton.addEventListener("click", () => {
@@ -145,27 +165,28 @@ function renderAll(): void {
   renderPreviewState();
   renderTemplateState();
   renderOfflineCheck();
+  renderExportStatus();
 }
 
 function renderEditorState(): void {
-  elements.inputStats.textContent = formatInputStats(state.markdown);
-  renderWarnings(elements.warnings, state.parsed.warnings);
+  elements.inputStats.textContent = formatInputStats(state.markdown, getCurrentLocale(), t);
+  renderWarnings(elements.warnings, state.parsed.warnings, t);
 }
 
 function renderPreviewState(): void {
-  renderPreview(elements.preview, state.parsed.html, state.markdown.trim().length === 0);
+  renderPreview(elements.preview, state.parsed.html, state.markdown.trim().length === 0, t("preview.empty"));
 }
 
 function renderTemplateState(): void {
   const styleMap = buildStyleMap(state.template);
-  renderTemplateStatus(elements.templateStatus, state.template);
-  renderStyleDiagnostics(elements.templateDiagnostics, state.template, styleMap);
+  renderTemplateStatus(elements.templateStatus, state.template, t, formatList);
+  renderStyleDiagnostics(elements.templateDiagnostics, state.template, styleMap, t);
 }
 
 function renderOfflineCheck(): void {
   const result = runOfflineSelfCheck();
   elements.offlineCheck.className = result.ok ? "message ok" : "message warn";
-  elements.offlineCheck.textContent = result.messages.join(" ");
+  elements.offlineCheck.textContent = result.messages.map((message) => t(message.key, message.vars)).join(" ");
 }
 
 async function exportDocx(): Promise<void> {
@@ -173,12 +194,12 @@ async function exportDocx(): Promise<void> {
   renderEditorState();
 
   if (!state.markdown.trim()) {
-    setExportStatus("Add Markdown before exporting.", "warn");
+    setExportStatusKey("status.add_markdown", "warn");
     return;
   }
 
   elements.exportButton.disabled = true;
-  setExportStatus("Generating DOCX locally...", "");
+  setExportStatusKey("status.generating", "");
 
   try {
     const fileName = ensureDocxFileName(elements.filenameInput.value);
@@ -188,9 +209,9 @@ async function exportDocx(): Promise<void> {
       title: fileName.replace(/\.docx$/i, ""),
     });
     downloadBlob(blob, fileName);
-    setExportStatus(`Exported ${fileName}.`, "ok");
+    setExportStatusKey("status.exported", "ok", { fileName });
   } catch (error) {
-    setExportStatus(errorMessage(error), "error");
+    setExportError(error);
   } finally {
     elements.exportButton.disabled = false;
   }
@@ -208,9 +229,30 @@ function downloadBlob(blob: Blob, fileName: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 500);
 }
 
-function setExportStatus(message: string, kind: "" | "ok" | "warn" | "error"): void {
-  elements.exportStatus.className = kind ? `message ${kind}` : "message";
-  elements.exportStatus.textContent = message;
+function applyStaticI18n(): void {
+  applyI18nToDom();
+  elements.languageSelect.value = getCurrentLocale();
+}
+
+function setExportStatusKey(key: string, kind: "" | "ok" | "warn" | "error", vars?: TranslationVars): void {
+  state.exportStatus = { key, kind, vars };
+  renderExportStatus();
+}
+
+function setExportError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  if (hasTranslationKey(message)) {
+    setExportStatusKey(message, "error");
+    return;
+  }
+
+  setExportStatusKey("error.unexpected", "error", { message });
+}
+
+function renderExportStatus(): void {
+  const status = state.exportStatus;
+  elements.exportStatus.className = status.kind ? `message ${status.kind}` : "message";
+  elements.exportStatus.textContent = status.key ? t(status.key, status.vars) : status.message || "";
 }
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -219,8 +261,4 @@ function byId<T extends HTMLElement>(id: string): T {
     throw new Error(`Missing element #${id}`);
   }
   return element as T;
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

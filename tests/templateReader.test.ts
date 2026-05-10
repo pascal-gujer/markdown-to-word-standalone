@@ -34,6 +34,6 @@ describe("template reader", () => {
   });
 
   it("throws a clear error for non-zip data", async () => {
-    await expect(readTemplatePackage(new TextEncoder().encode("not a zip"), "bad.docx")).rejects.toThrow(/not a readable/i);
+    await expect(readTemplatePackage(new TextEncoder().encode("not a zip"), "bad.docx")).rejects.toThrow("error.template_unreadable");
   });
 });

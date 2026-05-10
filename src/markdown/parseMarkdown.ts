@@ -6,8 +6,15 @@ export type MarkdownParseResult = {
   html: string;
   tokens: Token[];
   model: DocxModel;
-  warnings: string[];
+  warnings: MarkdownWarningKey[];
 };
+
+export type MarkdownWarningKey =
+  | "warning.images"
+  | "warning.ordered_start"
+  | "warning.raw_html_blocked"
+  | "warning.raw_html_plain"
+  | "warning.task_list";
 
 const parser = new MarkdownIt({
   html: false,
@@ -31,30 +38,30 @@ export function renderMarkdown(markdown: string): string {
   return parser.render(markdown);
 }
 
-function detectWarnings(markdown: string, tokens: Token[]): string[] {
-  const warnings = new Set<string>();
+function detectWarnings(markdown: string, tokens: Token[]): MarkdownWarningKey[] {
+  const warnings = new Set<MarkdownWarningKey>();
 
   if (/<\s*(script|iframe|style|object|embed|link|meta)\b/i.test(markdown)) {
-    warnings.add("Raw HTML is escaped in the preview and ignored as HTML during DOCX export.");
+    warnings.add("warning.raw_html_blocked");
   } else if (/<[a-z][\s\S]*>/i.test(markdown)) {
-    warnings.add("Raw HTML is treated as plain text; HTML tags are not converted into Word elements.");
+    warnings.add("warning.raw_html_plain");
   }
 
   walkTokens(tokens, (token) => {
     if (token.type === "image") {
-      warnings.add("Images are not embedded in this version; image alt text is exported in brackets.");
+      warnings.add("warning.images");
     }
 
     if (token.type === "ordered_list_open") {
       const start = Number(token.attrGet("start") || "1");
       if (Number.isFinite(start) && start !== 1) {
-        warnings.add("Ordered lists are exported starting at 1 even when Markdown uses another start number.");
+        warnings.add("warning.ordered_start");
       }
     }
   });
 
   if (/\[[ xX]\]\s+/.test(markdown)) {
-    warnings.add("Task list checkboxes are exported as normal list text.");
+    warnings.add("warning.task_list");
   }
 
   return Array.from(warnings);

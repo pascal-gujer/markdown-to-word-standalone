@@ -1,6 +1,31 @@
 # Markdown to Word Offline
 
-Markdown to Word Offline is a browser-only tool that converts Markdown into a downloadable `.docx` file. It is built for restricted and offline machines: no server, no telemetry, no CDN, no external fonts, and no runtime network access.
+<p align="center">
+  <a href="docs/assets/markdown-to-word-standalone.png">
+    <img src="docs/assets/markdown-to-word-standalone.png" alt="Markdown to Word Offline showing sample Markdown on the left and rendered preview on the right." width="900">
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://pascal-gujer.github.io/markdown-to-word-standalone/"><strong>Open the live app</strong></a>
+  ·
+  <a href="https://github.com/pascal-gujer/markdown-to-word-standalone/releases/latest">Download the latest release</a>
+</p>
+
+<p align="center">
+  <sub>No install, account, upload, backend, cloud API, CDN, telemetry, or localhost server required. The GitHub Pages copy is the same standalone browser app and still converts Markdown locally on your device.</sub>
+</p>
+
+Markdown to Word Offline is a standalone browser app that converts Markdown into a downloadable `.docx` file. It runs entirely client-side from one self-contained HTML file; there is no server, upload, telemetry, CDN, cloud API, or remote document conversion.
+
+## What It Does
+
+- Converts Markdown to an editable `.docx` file directly in the browser.
+- Works as one self-contained HTML file after build.
+- Lets users paste Markdown, load local Markdown files, preview the rendered result, and export DOCX.
+- Includes English, German, French, and Italian UI translations with browser-language detection.
+- Optionally uses a local `.docx` or `.dotx` file as a style/template base so headers, footers, media, fields, styles, numbering, themes, and section settings are preserved where practical.
+- Keeps files local: documents are processed in the browser and are not uploaded.
 
 ## Build
 
@@ -10,6 +35,8 @@ npm run build
 ```
 
 The build writes one self-contained file at `dist/md-to-docx.html`.
+
+The public site is deployed from the same build output through GitHub Actions.
 
 Development server:
 
@@ -27,7 +54,7 @@ npm run test
 
 ## Offline Use
 
-After building, open `dist/md-to-docx.html` on the offline machine. It is intended to work directly from `file://` in browsers that permit local file selection, Blob downloads, and modern JavaScript APIs.
+Use the hosted page when you are online, or download/build `dist/md-to-docx.html` and open that single file on an offline machine. It is intended to work directly from `file://` in browsers that permit local file selection, Blob downloads, and modern JavaScript APIs.
 
 ## Workflow
 

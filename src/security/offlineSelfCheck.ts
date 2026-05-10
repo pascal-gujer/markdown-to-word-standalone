@@ -1,17 +1,22 @@
 export type OfflineSelfCheck = {
   ok: boolean;
-  messages: string[];
+  messages: OfflineSelfCheckMessage[];
+};
+
+export type OfflineSelfCheckMessage = {
+  key: string;
+  vars?: Record<string, number | string>;
 };
 
 const remoteUrlPattern = /^https?:\/\//i;
 
-export function installNetworkGuard(): void {
-  guardFetch();
-  guardXmlHttpRequest();
+export function installNetworkGuard(remoteMessage: () => string): void {
+  guardFetch(remoteMessage);
+  guardXmlHttpRequest(remoteMessage);
 }
 
 export function runOfflineSelfCheck(): OfflineSelfCheck {
-  const messages: string[] = [];
+  const messages: OfflineSelfCheckMessage[] = [];
   const externalNodes = Array.from(document.querySelectorAll<HTMLElement>("[src], [href]"))
     .filter((node) => {
       const value = node.getAttribute("src") || node.getAttribute("href") || "";
@@ -19,23 +24,23 @@ export function runOfflineSelfCheck(): OfflineSelfCheck {
     });
 
   if (externalNodes.length) {
-    messages.push(`Found ${externalNodes.length} external asset reference(s) in the page.`);
+    messages.push({ key: "offline.external_assets", vars: { count: externalNodes.length } });
   }
 
   const externalScripts = document.querySelectorAll("script[src]").length;
   const externalStyles = document.querySelectorAll('link[rel="stylesheet"][href]').length;
   if (externalScripts || externalStyles) {
-    messages.push("The final offline build should inline scripts and styles.");
+    messages.push({ key: "offline.inline_warning" });
   }
 
   if (!messages.length) {
-    messages.push("Offline self-check passed: no remote asset references are present in this page.");
+    messages.push({ key: "offline.ok" });
   }
 
-  return { ok: messages.length === 1 && messages[0].startsWith("Offline self-check passed"), messages };
+  return { ok: messages.length === 1 && messages[0].key === "offline.ok", messages };
 }
 
-function guardFetch(): void {
+function guardFetch(remoteMessage: () => string): void {
   if (!("fetch" in window)) {
     return;
   }
@@ -44,13 +49,13 @@ function guardFetch(): void {
   window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" || input instanceof URL ? String(input) : input.url;
     if (remoteUrlPattern.test(url)) {
-      return Promise.reject(new Error("Remote network access is disabled in Markdown to Word Offline."));
+      return Promise.reject(new Error(remoteMessage()));
     }
     return nativeFetch(input, init);
   }) as typeof window.fetch;
 }
 
-function guardXmlHttpRequest(): void {
+function guardXmlHttpRequest(remoteMessage: () => string): void {
   const nativeOpen = window.XMLHttpRequest?.prototype.open;
   if (!nativeOpen) {
     return;
@@ -64,7 +69,7 @@ function guardXmlHttpRequest(): void {
     password?: string | null,
   ): void {
     if (remoteUrlPattern.test(String(url))) {
-      throw new Error("Remote network access is disabled in Markdown to Word Offline.");
+      throw new Error(remoteMessage());
     }
     Reflect.apply(nativeOpen, this, [method, url, async, username, password]);
   };
