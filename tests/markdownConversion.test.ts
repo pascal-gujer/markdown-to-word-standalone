@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
-import { readFile } from "node:fs/promises";
 import { generateDocxBlob } from "../src/docx/generateDocx";
 import { parseMarkdown } from "../src/markdown/parseMarkdown";
 import { readTemplatePackage, type TemplateInfo } from "../src/docx/templateReader";
@@ -89,8 +88,8 @@ const value = "Grüsse";
   });
 
   it("uses a DOCX template as the base package and keeps headers, footers, media, fields, and custom parts", async () => {
-    const templateBytes = await readFile("issues/2/WordTemplate.docx");
-    const template = await readTemplatePackage(templateBytes, "WordTemplate.docx");
+    const templateBytes = await createPreservationTemplateFixture();
+    const template = await readTemplatePackage(templateBytes, "fixture-template.docx");
     const parsed = parseMarkdown(`# Inserted Report
 
 Body text with [new link](https://example.invalid/new).
@@ -134,4 +133,126 @@ function extractStyle(stylesXml: string, styleId: string): string {
   const match = stylesXml.match(pattern);
   expect(match).toBeTruthy();
   return match ? match[0] : "";
+}
+
+async function createPreservationTemplateFixture(): Promise<Uint8Array> {
+  const zip = new JSZip();
+  const pkgRelNs = "http://schemas.openxmlformats.org/package/2006/relationships";
+  const docRelNs = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const contentTypesNs = "http://schemas.openxmlformats.org/package/2006/content-types";
+  const wordNs = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+
+  zip.file("[Content_Types].xml", [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    `<Types xmlns="${contentTypesNs}">`,
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+    '<Default Extension="xml" ContentType="application/xml"/>',
+    '<Default Extension="png" ContentType="image/png"/>',
+    '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>',
+    '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>',
+    '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>',
+    '<Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>',
+    '<Override PartName="/word/settings.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.settings+xml"/>',
+    '<Override PartName="/word/fontTable.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.fontTable+xml"/>',
+    '<Override PartName="/word/footnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml"/>',
+    '<Override PartName="/word/endnotes.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml"/>',
+    '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>',
+    '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/>',
+    '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>',
+    '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>',
+    '<Override PartName="/customXml/itemProps1.xml" ContentType="application/vnd.openxmlformats-officedocument.customXmlProperties+xml"/>',
+    "</Types>",
+  ].join(""));
+
+  zip.folder("_rels")?.file(".rels", [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    `<Relationships xmlns="${pkgRelNs}">`,
+    `<Relationship Id="rId1" Type="${docRelNs}/officeDocument" Target="word/document.xml"/>`,
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>',
+    `<Relationship Id="rId3" Type="${docRelNs}/extended-properties" Target="docProps/app.xml"/>`,
+    "</Relationships>",
+  ].join(""));
+
+  const word = zip.folder("word");
+  word?.file("document.xml", [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    `<w:document xmlns:w="${wordNs}" xmlns:r="${docRelNs}">`,
+    "<w:body>",
+    "<w:p><w:r><w:t>I hope you keep this template shell</w:t></w:r></w:p>",
+    '<w:sectPr><w:headerReference w:type="default" r:id="rId11"/><w:footerReference w:type="default" r:id="rId12"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="900" w:right="900" w:bottom="900" w:left="900" w:header="450" w:footer="450" w:gutter="0"/></w:sectPr>',
+    "</w:body>",
+    "</w:document>",
+  ].join(""));
+
+  word?.folder("_rels")?.file("document.xml.rels", [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    `<Relationships xmlns="${pkgRelNs}">`,
+    `<Relationship Id="rId1" Type="${docRelNs}/customXml" Target="../customXml/item1.xml"/>`,
+    `<Relationship Id="rId2" Type="${docRelNs}/numbering" Target="numbering.xml"/>`,
+    `<Relationship Id="rId3" Type="${docRelNs}/styles" Target="styles.xml"/>`,
+    `<Relationship Id="rId4" Type="${docRelNs}/settings" Target="settings.xml"/>`,
+    `<Relationship Id="rId5" Type="${docRelNs}/webSettings" Target="webSettings.xml"/>`,
+    `<Relationship Id="rId6" Type="${docRelNs}/footnotes" Target="footnotes.xml"/>`,
+    `<Relationship Id="rId7" Type="${docRelNs}/endnotes" Target="endnotes.xml"/>`,
+    `<Relationship Id="rId8" Type="${docRelNs}/hyperlink" Target="https://example.invalid/existing" TargetMode="External"/>`,
+    `<Relationship Id="rId11" Type="${docRelNs}/header" Target="header1.xml"/>`,
+    `<Relationship Id="rId12" Type="${docRelNs}/footer" Target="footer1.xml"/>`,
+    `<Relationship Id="rId13" Type="${docRelNs}/fontTable" Target="fontTable.xml"/>`,
+    `<Relationship Id="rId14" Type="${docRelNs}/theme" Target="theme/theme1.xml"/>`,
+    "</Relationships>",
+  ].join(""));
+
+  word?.file("styles.xml", [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    `<w:styles xmlns:w="${wordNs}">`,
+    '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>',
+    '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="Heading 1"/></w:style>',
+    '<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/></w:style>',
+    "</w:styles>",
+  ].join(""));
+  word?.file("numbering.xml", [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    `<w:numbering xmlns:w="${wordNs}">`,
+    '<w:abstractNum w:abstractNumId="8"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>',
+    '<w:num w:numId="25"><w:abstractNumId w:val="8"/></w:num>',
+    "</w:numbering>",
+  ].join(""));
+  word?.folder("theme")?.file("theme1.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="Fixture Theme"/>');
+  word?.file("settings.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:settings xmlns:w="${wordNs}"><w:updateFields w:val="true"/></w:settings>`);
+  word?.file("webSettings.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:webSettings xmlns:w="${wordNs}"/>`);
+  word?.file("fontTable.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:fonts xmlns:w="${wordNs}"><w:font w:name="Aptos"/></w:fonts>`);
+  word?.file("footnotes.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:footnotes xmlns:w="${wordNs}"><w:footnote w:id="0"/></w:footnotes>`);
+  word?.file("endnotes.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:endnotes xmlns:w="${wordNs}"><w:endnote w:id="0"/></w:endnotes>`);
+  word?.file("header1.xml", [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    `<w:hdr xmlns:w="${wordNs}" xmlns:r="${docRelNs}" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">`,
+    '<w:p><w:r><w:pict><v:shape id="Watermark" style="position:absolute;width:100pt;height:100pt" type="#_x0000_t75"><v:imagedata r:id="rId1" o:title="watermark"/></v:shape></w:pict></w:r></w:p>',
+    "</w:hdr>",
+  ].join(""));
+  word?.folder("_rels")?.file("header1.xml.rels", [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    `<Relationships xmlns="${pkgRelNs}">`,
+    `<Relationship Id="rId1" Type="${docRelNs}/image" Target="media/image1.png"/>`,
+    "</Relationships>",
+  ].join(""));
+  word?.file("footer1.xml", [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    `<w:ftr xmlns:w="${wordNs}">`,
+    '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>',
+    "</w:ftr>",
+  ].join(""));
+  word?.folder("media")?.file("image1.png", Uint8Array.from([
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
+    0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196,
+    137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 248, 255, 255,
+    63, 0, 5, 254, 2, 254, 167, 53, 129, 132, 0, 0, 0, 0,
+    73, 69, 78, 68, 174, 66, 96, 130,
+  ]));
+
+  zip.folder("customXml")?.file("item1.xml", '<company><field name="retained">yes</field></company>');
+  zip.folder("customXml")?.file("itemProps1.xml", '<ds:datastoreItem ds:itemID="{11111111-1111-1111-1111-111111111111}" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml"/>');
+  zip.folder("docProps")?.file("core.xml", '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"/>');
+  zip.folder("docProps")?.file("app.xml", '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Fixture</Application></Properties>');
+
+  return zip.generateAsync({ type: "uint8array" });
 }
