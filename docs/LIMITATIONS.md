@@ -17,11 +17,14 @@ Supported:
 - Horizontal rules
 - Links
 - Tables
+- Images from a local ZIP bundle when referenced by Markdown and stored as `.png`, `.jpg`, `.jpeg`, or `.gif`
 - Unicode text, umlauts, emoji, and code block content
 
 Known limitations:
 
-- Images are not embedded; alt text is exported in brackets.
+- Images pasted as remote URLs, data URLs, unsupported formats, or missing ZIP entries are not embedded; alt text is exported in brackets.
+- ZIP import selects one Markdown file from the archive. If multiple Markdown files are present, the selected path is shown in the status message.
+- GIF files are embedded as image assets. Animation behavior depends on the Word processor.
 - Raw HTML is treated as text and is not converted to Word elements.
 - Task list checkboxes are exported as normal list text.
 - Ordered lists always use generated numbering from 1.

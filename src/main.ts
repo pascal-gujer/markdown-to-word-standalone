@@ -2,14 +2,23 @@ import { buildStyleMap } from "./docx/styleMapper";
 import { generateDocxBlob } from "./docx/generateDocx";
 import { readTemplateFile, type TemplateInfo } from "./docx/templateReader";
 import { applyI18nToDom, formatList, getCurrentLocale, hasTranslationKey, initializeI18n, setLocale, t, type TranslationVars } from "./i18n";
+import {
+  collectMarkdownImageReferences,
+  disposeImagePreviewUrls,
+  prepareImagePreviewUrls,
+  resolveBundleImage,
+  type MarkdownImageBundle,
+} from "./markdown/imageBundle";
 import { parseMarkdown, type MarkdownParseResult } from "./markdown/parseMarkdown";
 import { installNetworkGuard, runOfflineSelfCheck } from "./security/offlineSelfCheck";
 import { ensureDocxFileName, formatInputStats, readTextFile, sampleMarkdown } from "./ui/editor";
 import { renderStyleDiagnostics, renderTemplateStatus, renderWarnings } from "./ui/diagnostics";
 import { renderPreview } from "./ui/preview";
+import { readMarkdownZipFile } from "./ui/zipImport";
 
 type AppState = {
   markdown: string;
+  images: MarkdownImageBundle | null;
   parsed: MarkdownParseResult;
   template: TemplateInfo | null;
   exportStatus: ExportStatus;
@@ -25,9 +34,11 @@ type ExportStatus = {
 const elements = {
   markdownInput: byId<HTMLTextAreaElement>("markdown-input"),
   markdownFileInput: byId<HTMLInputElement>("markdown-file-input"),
+  zipFileInput: byId<HTMLInputElement>("zip-file-input"),
   templateFileInput: byId<HTMLInputElement>("template-file-input"),
   languageSelect: byId<HTMLSelectElement>("language-select"),
   loadMarkdownButton: byId<HTMLButtonElement>("load-markdown-button"),
+  loadZipButton: byId<HTMLButtonElement>("load-zip-button"),
   sampleButton: byId<HTMLButtonElement>("sample-button"),
   clearButton: byId<HTMLButtonElement>("clear-button"),
   livePreviewToggle: byId<HTMLInputElement>("live-preview-toggle"),
@@ -50,6 +61,7 @@ installNetworkGuard(() => t("error.network_disabled"));
 
 const state: AppState = {
   markdown: "",
+  images: null,
   parsed: parseMarkdown(""),
   template: null,
   exportStatus: { key: "status.ready", kind: "" },
@@ -80,10 +92,15 @@ function bindEvents(): void {
     elements.markdownFileInput.click();
   });
 
+  elements.loadZipButton.addEventListener("click", () => {
+    elements.zipFileInput.click();
+  });
+
   elements.markdownFileInput.addEventListener("change", async () => {
     const file = elements.markdownFileInput.files?.[0];
     if (!file) return;
     try {
+      setImageBundle(null);
       state.markdown = await readTextFile(file);
       elements.markdownInput.value = state.markdown;
       updateParsed();
@@ -96,7 +113,37 @@ function bindEvents(): void {
     }
   });
 
+  elements.zipFileInput.addEventListener("change", async () => {
+    const file = elements.zipFileInput.files?.[0];
+    if (!file) return;
+    try {
+      const imported = await readMarkdownZipFile(file);
+      setImageBundle(imported.imageBundle);
+      state.markdown = imported.markdown;
+      elements.markdownInput.value = state.markdown;
+      updateParsed();
+      renderAll();
+      setZipImportStatus(file.name, imported.markdownPath, imported.imageBundle.assets.length, [
+        imported.markdownFileCount > 1
+          ? t("zip.note.multiple_markdown", { count: imported.markdownFileCount, markdownPath: imported.markdownPath })
+          : "",
+        imported.missingReferences.length
+          ? t("zip.note.missing_images", { count: imported.missingReferences.length })
+          : "",
+        imported.unsupportedReferences.length
+          ? t("zip.note.unsupported_images", { count: imported.unsupportedReferences.length })
+          : "",
+      ].filter(Boolean));
+    } catch (error) {
+      setImageBundle(null);
+      setExportError(error);
+    } finally {
+      elements.zipFileInput.value = "";
+    }
+  });
+
   elements.sampleButton.addEventListener("click", () => {
+    setImageBundle(null);
     state.markdown = sampleMarkdown(t);
     elements.markdownInput.value = state.markdown;
     updateParsed();
@@ -105,6 +152,7 @@ function bindEvents(): void {
   });
 
   elements.clearButton.addEventListener("click", () => {
+    setImageBundle(null);
     state.markdown = "";
     elements.markdownInput.value = "";
     updateParsed();
@@ -157,7 +205,12 @@ function bindEvents(): void {
 }
 
 function updateParsed(): void {
-  state.parsed = parseMarkdown(state.markdown);
+  state.parsed = parseMarkdown(state.markdown, { imageMode: state.images ? "embedded" : "text" });
+  if (state.images && collectMarkdownImageReferences(state.markdown).some((reference) => !resolveBundleImage(state.images, reference.src))) {
+    if (!state.parsed.warnings.includes("warning.images")) {
+      state.parsed.warnings.push("warning.images");
+    }
+  }
 }
 
 function renderAll(): void {
@@ -174,7 +227,7 @@ function renderEditorState(): void {
 }
 
 function renderPreviewState(): void {
-  renderPreview(elements.preview, state.parsed.html, state.markdown.trim().length === 0, t("preview.empty"));
+  renderPreview(elements.preview, state.parsed.html, state.markdown.trim().length === 0, t("preview.empty"), state.images);
 }
 
 function renderTemplateState(): void {
@@ -205,6 +258,7 @@ async function exportDocx(): Promise<void> {
     const fileName = ensureDocxFileName(elements.filenameInput.value);
     elements.filenameInput.value = fileName;
     const blob = await generateDocxBlob(state.parsed.model, {
+      images: state.images,
       template: state.template,
       title: fileName.replace(/\.docx$/i, ""),
     });
@@ -214,6 +268,14 @@ async function exportDocx(): Promise<void> {
     setExportError(error);
   } finally {
     elements.exportButton.disabled = false;
+  }
+}
+
+function setImageBundle(bundle: MarkdownImageBundle | null): void {
+  disposeImagePreviewUrls(state.images);
+  state.images = bundle;
+  if (state.images) {
+    prepareImagePreviewUrls(state.images);
   }
 }
 
@@ -237,6 +299,15 @@ function applyStaticI18n(): void {
 function setExportStatusKey(key: string, kind: "" | "ok" | "warn" | "error", vars?: TranslationVars): void {
   state.exportStatus = { key, kind, vars };
   renderExportStatus();
+}
+
+function setZipImportStatus(fileName: string, markdownPath: string, imageCount: number, notes: string[]): void {
+  setExportStatusKey(notes.length ? "status.zip_loaded_with_notes" : "status.zip_loaded", "ok", {
+    count: imageCount,
+    fileName,
+    markdownPath,
+    notes: notes.join(" "),
+  });
 }
 
 function setExportError(error: unknown): void {

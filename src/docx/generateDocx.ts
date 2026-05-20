@@ -1,9 +1,11 @@
 import JSZip from "jszip";
+import { resolveBundleImage, type MarkdownImageAsset, type MarkdownImageBundle } from "../markdown/imageBundle";
 import type { DocxBlock, DocxModel, ListBlock, RichTextSpan, TableBlock } from "../markdown/markdownToDocxModel";
 import { buildStyleMap, type StyleMap } from "./styleMapper";
 import type { TemplateInfo } from "./templateReader";
 
 export type GenerateDocxOptions = {
+  images?: MarkdownImageBundle | null;
   template?: TemplateInfo | null;
   title?: string;
 };
@@ -16,6 +18,9 @@ const DOC_REL_NS = `${SCHEME}schemas.openxmlformats.org/officeDocument/2006/rela
 const CONTENT_TYPES_NS = `${SCHEME}schemas.openxmlformats.org/package/2006/content-types`;
 const WORD_NS = `${SCHEME}schemas.openxmlformats.org/wordprocessingml/2006/main`;
 const MARKUP_NS = `${SCHEME}schemas.openxmlformats.org/markup-compatibility/2006`;
+const DRAWING_NS = `${SCHEME}schemas.openxmlformats.org/drawingml/2006/main`;
+const PICTURE_NS = `${SCHEME}schemas.openxmlformats.org/drawingml/2006/picture`;
+const WORD_DRAWING_NS = `${SCHEME}schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing`;
 const CORE_NS = `${SCHEME}schemas.openxmlformats.org/package/2006/metadata/core-properties`;
 const APP_NS = `${SCHEME}schemas.openxmlformats.org/officeDocument/2006/extended-properties`;
 const DC_NS = `${SCHEME}purl.org/dc/elements/1.1/`;
@@ -37,13 +42,25 @@ type NumberingSetup = {
 };
 
 type RenderContext = {
+  embeddedImages: EmbeddedImage[];
+  existingPackagePaths: Set<string>;
   styleMap: StyleMap;
   relationships: Relationship[];
   hyperlinkIds: Map<string, string>;
+  imageBundle?: MarkdownImageBundle | null;
+  imageIds: Map<string, EmbeddedImage>;
   listNumIds: {
     bullet: number;
     ordered: number;
   };
+  nextDocPrId: number;
+};
+
+type EmbeddedImage = {
+  asset: MarkdownImageAsset;
+  docPrId: number;
+  relationshipId: string;
+  target: string;
 };
 
 type RenderOptions = {
@@ -52,22 +69,27 @@ type RenderOptions = {
 
 export async function generateDocxBlob(model: DocxModel, options: GenerateDocxOptions = {}): Promise<Blob> {
   if (options.template?.packageBytes && options.template.documentXml) {
-    return generateDocxFromTemplatePackage(model, options.template, options.title);
+    return generateDocxFromTemplatePackage(model, options.template, options.title, options.images);
   }
 
   const styleMap = buildStyleMap(options.template);
   const numbering = createNumberingXml();
   const context: RenderContext = {
+    embeddedImages: [],
+    existingPackagePaths: new Set(),
     styleMap,
     relationships: [
       { id: "rId1", type: `${DOC_REL_NS}/styles`, target: "styles.xml" },
       { id: "rId2", type: `${DOC_REL_NS}/numbering`, target: "numbering.xml" },
     ],
     hyperlinkIds: new Map(),
+    imageBundle: options.images,
+    imageIds: new Map(),
     listNumIds: {
       bullet: numbering.bulletNumId,
       ordered: numbering.orderedNumId,
     },
+    nextDocPrId: 1,
   };
 
   if (options.template?.themeXml) {
@@ -78,7 +100,7 @@ export async function generateDocxBlob(model: DocxModel, options: GenerateDocxOp
   const stylesXml = ensureStylesXml(options.template?.stylesXml, styleMap.requiredFallbackStyleIds);
 
   const zip = new JSZip();
-  zip.file("[Content_Types].xml", createContentTypesXml(Boolean(options.template?.themeXml)));
+  zip.file("[Content_Types].xml", createContentTypesXml(Boolean(options.template?.themeXml), context.embeddedImages.length > 0));
   zip.folder("_rels")?.file(".rels", createPackageRelationshipsXml());
   zip.folder("docProps")?.file("core.xml", createCorePropertiesXml(options.title || "Converted Markdown"));
   zip.folder("docProps")?.file("app.xml", createAppPropertiesXml());
@@ -86,6 +108,7 @@ export async function generateDocxBlob(model: DocxModel, options: GenerateDocxOp
   word?.file("document.xml", documentXml);
   word?.file("styles.xml", stylesXml);
   word?.file("numbering.xml", numbering.xml);
+  writeImageFiles(word, context.embeddedImages);
   word?.folder("_rels")?.file("document.xml.rels", createDocumentRelationshipsXml(context.relationships));
   if (options.template?.themeXml) {
     word?.folder("theme")?.file("theme1.xml", options.template.themeXml);
@@ -99,7 +122,12 @@ export async function generateDocxBlob(model: DocxModel, options: GenerateDocxOp
   });
 }
 
-async function generateDocxFromTemplatePackage(model: DocxModel, template: TemplateInfo, title?: string): Promise<Blob> {
+async function generateDocxFromTemplatePackage(
+  model: DocxModel,
+  template: TemplateInfo,
+  title?: string,
+  images?: MarkdownImageBundle | null,
+): Promise<Blob> {
   const zip = await JSZip.loadAsync(template.packageBytes!);
   const styleMap = buildStyleMap(template);
   const relationships = parseRelationshipsXml(
@@ -113,26 +141,33 @@ async function generateDocxFromTemplatePackage(model: DocxModel, template: Templ
 
   const numbering = createNumberingXml(template.numberingXml);
   const context: RenderContext = {
+    embeddedImages: [],
+    existingPackagePaths: new Set(Object.keys(zip.files)),
     styleMap,
     relationships,
     hyperlinkIds: relationshipHyperlinkMap(relationships),
+    imageBundle: images,
+    imageIds: new Map(),
     listNumIds: {
       bullet: numbering.bulletNumId,
       ordered: numbering.orderedNumId,
     },
+    nextDocPrId: nextDrawingDocPrId(template.documentXml || ""),
   };
 
   const bodyXml = renderBlocks(model.blocks, context);
   const documentXml = replaceTemplateDocumentBody(template.documentXml || "", bodyXml);
   const stylesXml = ensureStylesXml(template.stylesXml, styleMap.requiredFallbackStyleIds);
-  const contentTypesXml = ensurePackageContentTypes(template.contentTypesXml || createContentTypesXml(Boolean(template.themeXml)), {
+  const contentTypesXml = ensurePackageContentTypes(template.contentTypesXml || createContentTypesXml(Boolean(template.themeXml), context.embeddedImages.length > 0), {
     hasTheme: Boolean(template.themeXml),
+    hasImages: context.embeddedImages.length > 0,
   });
 
   zip.file("[Content_Types].xml", contentTypesXml);
   zip.file("word/document.xml", documentXml);
   zip.file("word/styles.xml", stylesXml);
   zip.file("word/numbering.xml", numbering.xml);
+  writeImageFiles(zip.folder("word"), context.embeddedImages);
   zip.folder("word")?.folder("_rels")?.file("document.xml.rels", createDocumentRelationshipsXml(context.relationships));
   if (template.themeXml) {
     zip.folder("word")?.folder("theme")?.file("theme1.xml", template.themeXml);
@@ -277,6 +312,11 @@ function paragraphPropertiesXml(options: {
 }
 
 function spanXml(span: RichTextSpan, context: RenderContext): string {
+  if (span.image) {
+    const image = embeddedImageForSpan(span, context);
+    return image ? imageRunXml(image, span.image.alt) : runXml({ ...span, image: undefined, text: `[${span.image.alt || "image"}]` }, context);
+  }
+
   const run = runXml(span, context);
   if (!span.link) {
     return run;
@@ -284,6 +324,94 @@ function spanXml(span: RichTextSpan, context: RenderContext): string {
 
   const linkId = hyperlinkRelationshipId(span.link, context);
   return `<w:hyperlink r:id="${attr(linkId)}" w:history="1">${runXml({ ...span, link: undefined }, context, true)}</w:hyperlink>`;
+}
+
+function embeddedImageForSpan(span: RichTextSpan, context: RenderContext): EmbeddedImage | undefined {
+  if (!span.image) {
+    return undefined;
+  }
+  const asset = resolveBundleImage(context.imageBundle, span.image.src);
+  if (!asset) {
+    return undefined;
+  }
+
+  const existing = context.imageIds.get(asset.path);
+  if (existing) {
+    return existing;
+  }
+
+  const target = nextImageTarget(asset, context);
+  const embedded: EmbeddedImage = {
+    asset,
+    docPrId: context.nextDocPrId,
+    relationshipId: nextRelationshipId(context.relationships),
+    target,
+  };
+  context.nextDocPrId += 1;
+  context.imageIds.set(asset.path, embedded);
+  context.embeddedImages.push(embedded);
+  context.relationships.push({
+    id: embedded.relationshipId,
+    type: `${DOC_REL_NS}/image`,
+    target,
+  });
+  return embedded;
+}
+
+function imageRunXml(image: EmbeddedImage, alt: string): string {
+  const size = imageSizeEmu(image.asset);
+  const descr = attr(alt || image.asset.fileName);
+  const name = attr(image.asset.fileName);
+  return [
+    "<w:r><w:drawing>",
+    '<wp:inline distT="0" distB="0" distL="0" distR="0">',
+    `<wp:extent cx="${size.cx}" cy="${size.cy}"/>`,
+    '<wp:effectExtent l="0" t="0" r="0" b="0"/>',
+    `<wp:docPr id="${image.docPrId}" name="${name}" descr="${descr}"/>`,
+    '<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>',
+    '<a:graphic>',
+    `<a:graphicData uri="${PICTURE_NS}">`,
+    "<pic:pic>",
+    `<pic:nvPicPr><pic:cNvPr id="0" name="${name}" descr="${descr}"/><pic:cNvPicPr/></pic:nvPicPr>`,
+    `<pic:blipFill><a:blip r:embed="${attr(image.relationshipId)}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`,
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${size.cx}" cy="${size.cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>`,
+    "</pic:pic>",
+    "</a:graphicData>",
+    "</a:graphic>",
+    "</wp:inline>",
+    "</w:drawing></w:r>",
+  ].join("");
+}
+
+function imageSizeEmu(asset: MarkdownImageAsset): { cx: number; cy: number } {
+  const emuPerPixel = 9525;
+  const maxWidth = 5_760_000;
+  const naturalWidth = Math.max(1, asset.widthPx) * emuPerPixel;
+  const naturalHeight = Math.max(1, asset.heightPx) * emuPerPixel;
+  if (naturalWidth <= maxWidth) {
+    return { cx: naturalWidth, cy: naturalHeight };
+  }
+  return {
+    cx: maxWidth,
+    cy: Math.max(1, Math.round(naturalHeight * (maxWidth / naturalWidth))),
+  };
+}
+
+function nextImageTarget(asset: MarkdownImageAsset, context: RenderContext): string {
+  let index = context.embeddedImages.length + 1;
+  let target = "";
+  do {
+    target = `media/markdown-image-${index}.${asset.extension === "jpeg" ? "jpg" : asset.extension}`;
+    index += 1;
+  } while (context.existingPackagePaths.has(`word/${target}`));
+  context.existingPackagePaths.add(`word/${target}`);
+  return target;
+}
+
+function writeImageFiles(word: JSZip | null, images: EmbeddedImage[]): void {
+  for (const image of images) {
+    word?.file(image.target, image.asset.data);
+  }
 }
 
 function runXml(span: RichTextSpan, context: RenderContext, forceHyperlinkStyle = false): string {
@@ -342,20 +470,22 @@ function hyperlinkRelationshipId(url: string, context: RenderContext): string {
 function createDocumentXml(bodyXml: string, templateSectPr?: string): string {
   const sectPr = templateSectPr || '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>';
   return xmlDeclaration() +
-    `<w:document xmlns:w="${WORD_NS}" xmlns:r="${DOC_REL_NS}" xmlns:mc="${MARKUP_NS}" mc:Ignorable="">` +
+    `<w:document xmlns:w="${WORD_NS}" xmlns:r="${DOC_REL_NS}" xmlns:mc="${MARKUP_NS}" xmlns:wp="${WORD_DRAWING_NS}" xmlns:a="${DRAWING_NS}" xmlns:pic="${PICTURE_NS}" mc:Ignorable="">` +
     `<w:body>${bodyXml || '<w:p/>'}${sectPr}</w:body>` +
     "</w:document>";
 }
 
-function createContentTypesXml(includeTheme: boolean): string {
+function createContentTypesXml(includeTheme: boolean, includeImages = false): string {
   const themeOverride = includeTheme
     ? '<Override PartName="/word/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>'
     : "";
+  const imageDefaults = includeImages ? imageContentTypeDefaults() : "";
 
   return xmlDeclaration() +
     `<Types xmlns="${CONTENT_TYPES_NS}">` +
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
     '<Default Extension="xml" ContentType="application/xml"/>' +
+    imageDefaults +
     '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
     '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
     '<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/>' +
@@ -441,7 +571,7 @@ function nextRelationshipId(relationships: Relationship[]): string {
   return `rId${next}`;
 }
 
-function ensurePackageContentTypes(xml: string, options: { hasTheme: boolean }): string {
+function ensurePackageContentTypes(xml: string, options: { hasImages?: boolean; hasTheme: boolean }): string {
   let output = xml && /<Types\b/.test(xml) ? xml : createContentTypesXml(options.hasTheme);
   output = upsertContentTypeOverride(
     output,
@@ -465,7 +595,33 @@ function ensurePackageContentTypes(xml: string, options: { hasTheme: boolean }):
       "application/vnd.openxmlformats-officedocument.theme+xml",
     );
   }
+  if (options.hasImages) {
+    output = upsertDefaultContentType(output, "gif", "image/gif");
+    output = upsertDefaultContentType(output, "jpeg", "image/jpeg");
+    output = upsertDefaultContentType(output, "jpg", "image/jpeg");
+    output = upsertDefaultContentType(output, "png", "image/png");
+  }
   return output;
+}
+
+function imageContentTypeDefaults(): string {
+  return '<Default Extension="gif" ContentType="image/gif"/>' +
+    '<Default Extension="jpeg" ContentType="image/jpeg"/>' +
+    '<Default Extension="jpg" ContentType="image/jpeg"/>' +
+    '<Default Extension="png" ContentType="image/png"/>';
+}
+
+function upsertDefaultContentType(xml: string, extension: string, contentType: string): string {
+  const defaultPattern = new RegExp(`<Default\\b[^>]*Extension="${escapeRegExp(extension)}"[^>]*/>`);
+  const item = `<Default Extension="${extension}" ContentType="${contentType}"/>`;
+  if (defaultPattern.test(xml)) {
+    return xml.replace(defaultPattern, item);
+  }
+  const firstOverrideIndex = xml.search(/<Override\b/);
+  if (firstOverrideIndex >= 0) {
+    return `${xml.slice(0, firstOverrideIndex)}${item}${xml.slice(firstOverrideIndex)}`;
+  }
+  return xml.replace("</Types>", `${item}</Types>`);
 }
 
 function upsertContentTypeOverride(xml: string, partName: string, contentType: string): string {
@@ -489,17 +645,46 @@ function replaceTemplateDocumentBody(templateDocumentXml: string, bodyXml: strin
   const sectPr = extractLastSectionPropertiesXml(bodyContent) ||
     '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>';
 
-  return templateDocumentXml.slice(0, match.index) +
+  return ensureDocumentNamespaces(templateDocumentXml.slice(0, match.index) +
     bodyOpen +
     (bodyXml || "<w:p/>") +
     sectPr +
     bodyClose +
-    templateDocumentXml.slice(match.index + match[0].length);
+    templateDocumentXml.slice(match.index + match[0].length));
 }
 
 function extractLastSectionPropertiesXml(bodyContent: string): string | undefined {
   const matches = Array.from(bodyContent.matchAll(/<w:sectPr\b[\s\S]*?<\/w:sectPr>/g));
   return matches.at(-1)?.[0];
+}
+
+function ensureDocumentNamespaces(documentXml: string): string {
+  const match = /<w:document\b([^>]*)>/.exec(documentXml);
+  if (!match) {
+    return documentXml;
+  }
+
+  const attrs = match[1];
+  const additions = [
+    attrs.includes("xmlns:wp=") ? "" : ` xmlns:wp="${WORD_DRAWING_NS}"`,
+    attrs.includes("xmlns:a=") ? "" : ` xmlns:a="${DRAWING_NS}"`,
+    attrs.includes("xmlns:pic=") ? "" : ` xmlns:pic="${PICTURE_NS}"`,
+    attrs.includes("xmlns:r=") ? "" : ` xmlns:r="${DOC_REL_NS}"`,
+  ].join("");
+
+  return additions
+    ? `${documentXml.slice(0, match.index)}<w:document${attrs}${additions}>${documentXml.slice(match.index + match[0].length)}`
+    : documentXml;
+}
+
+function nextDrawingDocPrId(documentXml: string): number {
+  let max = 0;
+  let match: RegExpExecArray | null;
+  const pattern = /<wp:docPr\b[^>]*\bid="(\d+)"/g;
+  while ((match = pattern.exec(documentXml))) {
+    max = Math.max(max, Number(match[1]) || 0);
+  }
+  return max + 1;
 }
 
 function createCorePropertiesXml(title: string): string {

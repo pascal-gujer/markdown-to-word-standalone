@@ -44,12 +44,14 @@
             </div>
             <div class="panel-actions">
               <button class="button" id="load-markdown-button" type="button" data-i18n="button.load_file">Load File</button>
+              <button class="button" id="load-zip-button" type="button" data-i18n="button.load_zip">Load ZIP</button>
               <button class="button" id="sample-button" type="button" data-i18n="button.sample">Sample</button>
               <button class="button danger" id="clear-button" type="button" data-i18n="button.clear">Clear</button>
             </div>
           </div>
           <div class="panel-body">
             <input id="markdown-file-input" class="sr-only" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" />
+            <input id="zip-file-input" class="sr-only" type="file" accept=".zip,application/zip,application/x-zip-compressed" />
             <label class="field-label" for="markdown-input" data-i18n="field.markdown_input">Markdown input</label>
             <textarea id="markdown-input" spellcheck="false" data-i18n-placeholder="placeholder.markdown_input" placeholder="# Paste Markdown here"></textarea>
             <div class="editor-meta">

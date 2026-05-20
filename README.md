@@ -23,6 +23,7 @@ Markdown to Word Offline is a standalone browser app that converts Markdown into
 - Converts Markdown to an editable `.docx` file directly in the browser.
 - Works as one self-contained HTML file after build.
 - Lets users paste Markdown, load local Markdown files, preview the rendered result, and export DOCX.
+- Can load a local `.zip` bundle containing Markdown plus referenced `.png`, `.jpg`, `.jpeg`, or `.gif` images and embed those images in the exported DOCX.
 - Includes English, German, French, and Italian UI translations with browser-language detection.
 - Optionally uses a local `.docx` or `.dotx` file as a style/template base so headers, footers, media, fields, styles, numbering, themes, and section settings are preserved where practical.
 - Keeps files local: documents are processed in the browser and are not uploaded.
@@ -58,11 +59,13 @@ Use the hosted page when you are online, or download/build `dist/md-to-docx.html
 
 ## Workflow
 
-1. Paste Markdown or load a local `.md`, `.markdown`, or `.txt` file.
+1. Paste Markdown, load a local `.md`, `.markdown`, or `.txt` file, or load a `.zip` bundle with Markdown and referenced images.
 2. Optionally load a `.docx` or `.dotx` style template.
 3. Choose the output file name and export the `.docx`.
 
 Files are processed locally in your browser and are not uploaded.
+
+ZIP import is additive: the normal text editor and single Markdown file workflow remain unchanged. For image embedding, references such as `![Logo](images/logo.png)` are resolved relative to the Markdown file inside the ZIP. Supported image formats are `.png`, `.jpg`, `.jpeg`, and `.gif`; unsupported or missing images are reported before export.
 
 ## Template Support
 

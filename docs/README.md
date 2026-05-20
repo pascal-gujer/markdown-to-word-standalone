@@ -35,11 +35,13 @@ Build the project, then move or open `dist/md-to-docx.html` on the offline machi
 
 ## Basic Workflow
 
-1. Paste Markdown into the editor or load a local `.md`, `.markdown`, or `.txt` file.
+1. Paste Markdown into the editor, load a local `.md`, `.markdown`, or `.txt` file, or load a `.zip` bundle containing Markdown plus referenced images.
 2. Optionally load a `.docx` or `.dotx` style template.
 3. Set the output file name and export the `.docx`.
 
 Files are processed locally in the browser and are not uploaded.
+
+ZIP import is an additional workflow, not a replacement for the editor. The app chooses the best Markdown file in the archive and resolves image references relative to that file. Supported embedded image formats are `.png`, `.jpg`, `.jpeg`, and `.gif`.
 
 ## Template Support
 
@@ -80,3 +82,5 @@ The app generates standards-oriented WordprocessingML. Microsoft Word, LibreOffi
 - Preview links are displayed but click navigation is prevented inside the app.
 
 The generated `.docx` may contain external hyperlink relationships if the Markdown contains links. That is document content, not runtime app network activity.
+
+Markdown images are only previewed and embedded when they come from a local ZIP bundle. Remote image URLs are replaced with alt text in the preview and are not loaded by the app.

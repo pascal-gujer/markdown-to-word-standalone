@@ -9,6 +9,10 @@ export type MarkdownParseResult = {
   warnings: MarkdownWarningKey[];
 };
 
+export type ParseMarkdownOptions = {
+  imageMode?: "embedded" | "text";
+};
+
 export type MarkdownWarningKey =
   | "warning.images"
   | "warning.ordered_start"
@@ -23,14 +27,14 @@ const parser = new MarkdownIt({
   breaks: false,
 });
 
-export function parseMarkdown(markdown: string): MarkdownParseResult {
+export function parseMarkdown(markdown: string, options: ParseMarkdownOptions = {}): MarkdownParseResult {
   const tokens = parser.parse(markdown, {});
   const html = parser.render(markdown);
   return {
     html,
     tokens,
     model: markdownTokensToDocxModel(tokens),
-    warnings: detectWarnings(markdown, tokens),
+    warnings: detectWarnings(markdown, tokens, options),
   };
 }
 
@@ -38,7 +42,7 @@ export function renderMarkdown(markdown: string): string {
   return parser.render(markdown);
 }
 
-function detectWarnings(markdown: string, tokens: Token[]): MarkdownWarningKey[] {
+function detectWarnings(markdown: string, tokens: Token[], options: ParseMarkdownOptions): MarkdownWarningKey[] {
   const warnings = new Set<MarkdownWarningKey>();
 
   if (/<\s*(script|iframe|style|object|embed|link|meta)\b/i.test(markdown)) {
@@ -49,7 +53,9 @@ function detectWarnings(markdown: string, tokens: Token[]): MarkdownWarningKey[]
 
   walkTokens(tokens, (token) => {
     if (token.type === "image") {
-      warnings.add("warning.images");
+      if (options.imageMode !== "embedded") {
+        warnings.add("warning.images");
+      }
     }
 
     if (token.type === "ordered_list_open") {

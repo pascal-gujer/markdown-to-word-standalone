@@ -6,6 +6,11 @@ export type RichTextSpan = {
   italic?: boolean;
   code?: boolean;
   link?: string;
+  image?: {
+    src: string;
+    alt: string;
+    title?: string;
+  };
 };
 
 export type ParagraphBlock = {
@@ -212,7 +217,11 @@ function parseInline(children: Token[]): RichTextSpan[] {
 
     if (child.type === "image") {
       const alt = child.content || child.attrGet("alt") || "image";
-      pushSpan(spans, `[${alt}]`, state);
+      pushImageSpan(spans, {
+        src: child.attrGet("src") || "",
+        alt,
+        title: child.attrGet("title") || undefined,
+      }, state);
     }
   }
 
@@ -231,6 +240,7 @@ function pushSpan(
   const previous = spans[spans.length - 1];
   if (
     previous &&
+    !previous.image &&
     previous.bold === Boolean(state.bold) &&
     previous.italic === Boolean(state.italic) &&
     previous.code === Boolean(state.code) &&
@@ -246,6 +256,26 @@ function pushSpan(
     italic: Boolean(state.italic) || undefined,
     code: Boolean(state.code) || undefined,
     link: state.link,
+  });
+}
+
+function pushImageSpan(
+  spans: RichTextSpan[],
+  image: RichTextSpan["image"],
+  state: { bold?: boolean; italic?: boolean; code?: boolean; link?: string },
+): void {
+  if (!image?.src) {
+    pushSpan(spans, `[${image?.alt || "image"}]`, state);
+    return;
+  }
+
+  spans.push({
+    text: image.alt,
+    bold: Boolean(state.bold) || undefined,
+    italic: Boolean(state.italic) || undefined,
+    code: Boolean(state.code) || undefined,
+    link: state.link,
+    image,
   });
 }
 

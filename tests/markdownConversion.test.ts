@@ -23,6 +23,26 @@ Text with **bold**, *italic*, and \`code\`.
     expect(parsed.warnings).toEqual([]);
   });
 
+  it("keeps Markdown image references in the model and warns when no ZIP image bundle is loaded", () => {
+    const parsed = parseMarkdown("![Logo](images/logo.png) caption text");
+
+    expect(parsed.model.blocks[0]).toMatchObject({
+      type: "paragraph",
+      children: [
+        {
+          image: {
+            alt: "Logo",
+            src: "images/logo.png",
+          },
+        },
+        {
+          text: " caption text",
+        },
+      ],
+    });
+    expect(parsed.warnings).toContain("warning.images");
+  });
+
   it("exports a DOCX package with document XML, styles, numbering, tables, and links", async () => {
     const parsed = parseMarkdown(`# Title
 
@@ -66,6 +86,70 @@ const value = "Grüsse";
     expect(codeStyle.indexOf("<w:shd")).toBeLessThan(codeStyle.indexOf("<w:spacing"));
   });
 
+  it("embeds supported ZIP image assets into the DOCX package", async () => {
+    const parsed = parseMarkdown(`# Images
+
+![Logo](images/logo.png)
+![Photo](images/photo.jpeg)
+![Badge](images/badge.gif)
+`, { imageMode: "embedded" });
+
+    const blob = await generateDocxBlob(parsed.model, {
+      images: {
+        sourceFileName: "bundle.zip",
+        markdownPath: "document.md",
+        markdownBasePath: "",
+        assets: [{
+          path: "images/logo.png",
+          fileName: "logo.png",
+          extension: "png",
+          contentType: "image/png",
+          data: tinyPngBytes(),
+          widthPx: 1,
+          heightPx: 1,
+        }, {
+          path: "images/photo.jpeg",
+          fileName: "photo.jpeg",
+          extension: "jpeg",
+          contentType: "image/jpeg",
+          data: minimalJpegBytes(3, 2),
+          widthPx: 3,
+          heightPx: 2,
+        }, {
+          path: "images/badge.gif",
+          fileName: "badge.gif",
+          extension: "gif",
+          contentType: "image/gif",
+          data: tinyGifBytes(),
+          widthPx: 1,
+          heightPx: 1,
+        }],
+      },
+      title: "image-test",
+    });
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const documentXml = await zip.file("word/document.xml")?.async("string");
+    const relsXml = await zip.file("word/_rels/document.xml.rels")?.async("string");
+    const contentTypesXml = await zip.file("[Content_Types].xml")?.async("string");
+
+    expect(zip.file("word/media/markdown-image-1.png")).toBeTruthy();
+    expect(zip.file("word/media/markdown-image-2.jpg")).toBeTruthy();
+    expect(zip.file("word/media/markdown-image-3.gif")).toBeTruthy();
+    expect(documentXml).toContain("<w:drawing>");
+    expect(documentXml).toContain('descr="Logo"');
+    expect(documentXml).toContain('descr="Photo"');
+    expect(documentXml).toContain('descr="Badge"');
+    expect(documentXml).not.toContain("[Logo]");
+    expect(relsXml).toContain("/image");
+    expect(relsXml).toContain('Target="media/markdown-image-1.png"');
+    expect(relsXml).toContain('Target="media/markdown-image-2.jpg"');
+    expect(relsXml).toContain('Target="media/markdown-image-3.gif"');
+    expect(contentTypesXml).toContain('Extension="gif" ContentType="image/gif"');
+    expect(contentTypesXml).toContain('Extension="jpg" ContentType="image/jpeg"');
+    expect(contentTypesXml).toContain('Extension="jpeg" ContentType="image/jpeg"');
+    expect(contentTypesXml).toContain('Extension="png" ContentType="image/png"');
+  });
+
   it("preserves a template theme only when a template provides one", async () => {
     const parsed = parseMarkdown("# Title");
     const themeXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="urn:test" name="Template Theme"/>';
@@ -94,11 +178,30 @@ const value = "Grüsse";
 
 Body text with [new link](https://example.invalid/new).
 
+![Inline logo](images/inline-logo.png)
+
 - One
 - Two
-`);
+`, { imageMode: "embedded" });
 
-    const blob = await generateDocxBlob(parsed.model, { template, title: "template-preservation-test" });
+    const blob = await generateDocxBlob(parsed.model, {
+      images: {
+        sourceFileName: "bundle.zip",
+        markdownPath: "report.md",
+        markdownBasePath: "",
+        assets: [{
+          path: "images/inline-logo.png",
+          fileName: "inline-logo.png",
+          extension: "png",
+          contentType: "image/png",
+          data: tinyPngBytes(),
+          widthPx: 1,
+          heightPx: 1,
+        }],
+      },
+      template,
+      title: "template-preservation-test",
+    });
     const zip = await JSZip.loadAsync(await blob.arrayBuffer());
     const documentXml = await zip.file("word/document.xml")?.async("string");
     const relsXml = await zip.file("word/_rels/document.xml.rels")?.async("string");
@@ -109,6 +212,7 @@ Body text with [new link](https://example.invalid/new).
     expect(zip.file("word/footer1.xml")).toBeTruthy();
     expect(zip.file("word/_rels/header1.xml.rels")).toBeTruthy();
     expect(zip.file("word/media/image1.png")).toBeTruthy();
+    expect(zip.file("word/media/markdown-image-1.png")).toBeTruthy();
     expect(zip.file("customXml/item1.xml")).toBeTruthy();
     expect(zip.file("word/settings.xml")).toBeTruthy();
     expect(zip.file("word/fontTable.xml")).toBeTruthy();
@@ -116,6 +220,8 @@ Body text with [new link](https://example.invalid/new).
     expect(zip.file("word/endnotes.xml")).toBeTruthy();
 
     expect(documentXml).toContain("Inserted Report");
+    expect(documentXml).toContain("xmlns:wp=");
+    expect(documentXml).toContain("<w:drawing>");
     expect(documentXml).not.toContain("I hope you");
     expect(documentXml).toContain('<w:headerReference w:type="default" r:id="rId11"/>');
     expect(documentXml).toContain('<w:footerReference w:type="default" r:id="rId12"/>');
@@ -242,11 +348,7 @@ async function createPreservationTemplateFixture(): Promise<Uint8Array> {
     "</w:ftr>",
   ].join(""));
   word?.folder("media")?.file("image1.png", Uint8Array.from([
-    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
-    0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196,
-    137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 248, 255, 255,
-    63, 0, 5, 254, 2, 254, 167, 53, 129, 132, 0, 0, 0, 0,
-    73, 69, 78, 68, 174, 66, 96, 130,
+    ...tinyPngBytes(),
   ]));
 
   zip.folder("customXml")?.file("item1.xml", '<company><field name="retained">yes</field></company>');
@@ -255,4 +357,32 @@ async function createPreservationTemplateFixture(): Promise<Uint8Array> {
   zip.folder("docProps")?.file("app.xml", '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Fixture</Application></Properties>');
 
   return zip.generateAsync({ type: "uint8array" });
+}
+
+function tinyPngBytes(): Uint8Array {
+  return Uint8Array.from([
+    137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82,
+    0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196,
+    137, 0, 0, 0, 13, 73, 68, 65, 84, 120, 156, 99, 248, 255, 255,
+    63, 0, 5, 254, 2, 254, 167, 53, 129, 132, 0, 0, 0, 0,
+    73, 69, 78, 68, 174, 66, 96, 130,
+  ]);
+}
+
+function tinyGifBytes(): Uint8Array {
+  return Uint8Array.from([
+    71, 73, 70, 56, 57, 97, 1, 0, 1, 0, 128, 0, 0, 0, 0, 0,
+    255, 255, 255, 44, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 1, 76,
+    0, 59,
+  ]);
+}
+
+function minimalJpegBytes(width: number, height: number): Uint8Array {
+  return Uint8Array.from([
+    0xff, 0xd8,
+    0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00,
+    0xff, 0xc0, 0x00, 0x11, 0x08, (height >> 8) & 0xff, height & 0xff, (width >> 8) & 0xff, width & 0xff,
+    0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00,
+    0xff, 0xd9,
+  ]);
 }

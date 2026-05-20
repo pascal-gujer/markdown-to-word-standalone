@@ -44,6 +44,8 @@ The main document body is replaced by converted Markdown. The section properties
 
 Generated fallback styles are added when expected styles are missing.
 
+When Markdown is imported from a ZIP bundle, supported referenced images (`.png`, `.jpg`, `.jpeg`, `.gif`) are added as new media parts in the generated package. Existing template media, such as header or footer graphics, remains in place.
+
 ## What Is Not Preserved
 
 The app does not attempt to reproduce or execute:
