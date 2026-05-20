@@ -12,6 +12,8 @@ coverage/
 
 # Local/private issue material and generated investigations
 issues/
+Archive.zip
+archive.zip
 
 # OS and editor noise
 .DS_Store
@@ -37,4 +39,3 @@ Thumbs.db
 .azure/
 .gcloud/
 firebase-debug.log
-

@@ -368,16 +368,19 @@ h1 {
 }
 
 .preview-wrap {
-  min-height: 360px;
+  min-height: 0;
 }
 
 .preview {
-  min-height: 330px;
+  height: clamp(380px, 62vh, 720px);
+  max-height: 720px;
   overflow: auto;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 16px;
   background: #fbfcfd;
+  overflow-wrap: break-word;
+  overscroll-behavior: contain;
 }
 
 .preview.empty-state {
@@ -425,6 +428,18 @@ h1 {
 .preview table {
   width: 100%;
   border-collapse: collapse;
+}
+
+.preview img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: min(70vh, 560px);
+  height: auto;
+  margin: 0.85rem auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  object-fit: contain;
 }
 
 .preview th,

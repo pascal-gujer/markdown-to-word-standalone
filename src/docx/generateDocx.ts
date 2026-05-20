@@ -393,15 +393,18 @@ function imageRunXml(image: ImageDrawing, alt: string): string {
 function imageSizeEmu(asset: MarkdownImageAsset): { cx: number; cy: number } {
   const emuPerPixel = 9525;
   const maxWidth = 5_760_000;
-  const naturalWidth = Math.max(1, asset.widthPx) * emuPerPixel;
-  const naturalHeight = Math.max(1, asset.heightPx) * emuPerPixel;
-  if (naturalWidth <= maxWidth) {
-    return { cx: naturalWidth, cy: naturalHeight };
+  const maxHeight = 6_400_800;
+  let cx = Math.max(1, asset.widthPx) * emuPerPixel;
+  let cy = Math.max(1, asset.heightPx) * emuPerPixel;
+  if (cx > maxWidth) {
+    cy = Math.max(1, Math.round(cy * (maxWidth / cx)));
+    cx = maxWidth;
   }
-  return {
-    cx: maxWidth,
-    cy: Math.max(1, Math.round(naturalHeight * (maxWidth / naturalWidth))),
-  };
+  if (cy > maxHeight) {
+    cx = Math.max(1, Math.round(cx * (maxHeight / cy)));
+    cy = maxHeight;
+  }
+  return { cx, cy };
 }
 
 function nextImageTarget(asset: MarkdownImageAsset, context: RenderContext): string {

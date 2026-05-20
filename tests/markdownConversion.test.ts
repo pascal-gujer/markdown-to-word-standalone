@@ -150,6 +150,39 @@ const value = "Grüsse";
     expect(contentTypesXml).toContain('Extension="png" ContentType="image/png"');
   });
 
+  it("caps a tall portrait image's height so it fits on a single page while preserving aspect ratio", async () => {
+    const parsed = parseMarkdown(`![Portrait](images/portrait.png)`, { imageMode: "embedded" });
+
+    const blob = await generateDocxBlob(parsed.model, {
+      images: {
+        sourceFileName: "bundle.zip",
+        markdownPath: "report.md",
+        markdownBasePath: "",
+        assets: [{
+          path: "images/portrait.png",
+          fileName: "portrait.png",
+          extension: "png",
+          contentType: "image/png",
+          data: tinyPngBytes(),
+          widthPx: 1284,
+          heightPx: 2778,
+        }],
+      },
+      title: "portrait-cap-test",
+    });
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const documentXml = (await zip.file("word/document.xml")?.async("string")) || "";
+
+    const extentMatch = /<wp:extent\b[^/]*\bcx="(\d+)"\s+cy="(\d+)"/.exec(documentXml);
+    expect(extentMatch).toBeTruthy();
+    const cx = Number(extentMatch?.[1]);
+    const cy = Number(extentMatch?.[2]);
+    expect(cy).toBeLessThanOrEqual(6_400_800);
+    expect(cx).toBeLessThanOrEqual(5_760_000);
+    const aspect = 1284 / 2778;
+    expect(cx / cy).toBeCloseTo(aspect, 2);
+  });
+
   it("assigns unique wp:docPr ids when the same image is referenced multiple times", async () => {
     const parsed = parseMarkdown(`# Repeats
 
