@@ -150,6 +150,85 @@ const value = "Grüsse";
     expect(contentTypesXml).toContain('Extension="png" ContentType="image/png"');
   });
 
+  it("assigns unique wp:docPr ids when the same image is referenced multiple times", async () => {
+    const parsed = parseMarkdown(`# Repeats
+
+![Logo](images/logo.png)
+![Logo again](images/logo.png)
+![Logo once more](images/logo.png)
+`, { imageMode: "embedded" });
+
+    const blob = await generateDocxBlob(parsed.model, {
+      images: {
+        sourceFileName: "bundle.zip",
+        markdownPath: "report.md",
+        markdownBasePath: "",
+        assets: [{
+          path: "images/logo.png",
+          fileName: "logo.png",
+          extension: "png",
+          contentType: "image/png",
+          data: tinyPngBytes(),
+          widthPx: 1,
+          heightPx: 1,
+        }],
+      },
+      title: "repeat-test",
+    });
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const documentXml = await zip.file("word/document.xml")?.async("string");
+    const relsXml = await zip.file("word/_rels/document.xml.rels")?.async("string");
+
+    const docPrIds = Array.from((documentXml || "").matchAll(/<wp:docPr\b[^>]*\bid="(\d+)"/g)).map((match) => match[1]);
+    expect(docPrIds).toHaveLength(3);
+    expect(new Set(docPrIds).size).toBe(3);
+
+    const imageRelTargets = Array.from((relsXml || "").matchAll(/Target="(media\/markdown-image-[^"]+)"/g)).map((match) => match[1]);
+    expect(imageRelTargets).toHaveLength(1);
+    expect(zip.file(`word/${imageRelTargets[0]}`)).toBeTruthy();
+  });
+
+  it("wraps an image inside a w:hyperlink when the Markdown image is itself a link", async () => {
+    const parsed = parseMarkdown(`[![Logo](images/logo.png)](https://example.invalid/home)
+`, { imageMode: "embedded" });
+
+    const blob = await generateDocxBlob(parsed.model, {
+      images: {
+        sourceFileName: "bundle.zip",
+        markdownPath: "report.md",
+        markdownBasePath: "",
+        assets: [{
+          path: "images/logo.png",
+          fileName: "logo.png",
+          extension: "png",
+          contentType: "image/png",
+          data: tinyPngBytes(),
+          widthPx: 1,
+          heightPx: 1,
+        }],
+      },
+      title: "image-link-test",
+    });
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const documentXml = await zip.file("word/document.xml")?.async("string");
+    const relsXml = await zip.file("word/_rels/document.xml.rels")?.async("string");
+
+    expect(documentXml).toMatch(/<w:hyperlink[^>]*>\s*<w:r>[\s\S]*<w:drawing>[\s\S]*<\/w:drawing>[\s\S]*<\/w:r>\s*<\/w:hyperlink>/);
+    expect(relsXml).toContain('Target="https://example.invalid/home"');
+  });
+
+  it("falls back to bracketed alt text wrapped in a hyperlink when an image-as-link has no bundle asset", async () => {
+    const parsed = parseMarkdown(`[![Missing](images/missing.png)](https://example.invalid/away)
+`);
+
+    const blob = await generateDocxBlob(parsed.model, { title: "missing-link-test" });
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const documentXml = await zip.file("word/document.xml")?.async("string");
+
+    expect(documentXml).toMatch(/<w:hyperlink[^>]*>\s*<w:r>[\s\S]*\[Missing\][\s\S]*<\/w:r>\s*<\/w:hyperlink>/);
+    expect(documentXml).toContain('<w:rStyle w:val="Hyperlink"/>');
+  });
+
   it("preserves a template theme only when a template provides one", async () => {
     const parsed = parseMarkdown("# Title");
     const themeXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><a:theme xmlns:a="urn:test" name="Template Theme"/>';

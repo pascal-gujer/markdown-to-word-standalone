@@ -22,8 +22,8 @@ Supported:
 
 Known limitations:
 
-- Images pasted as remote URLs, data URLs, unsupported formats, or missing ZIP entries are not embedded; alt text is exported in brackets.
-- ZIP import selects one Markdown file from the archive. If multiple Markdown files are present, the selected path is shown in the status message.
+- Images pasted as remote URLs, data URLs, unsupported formats, missing ZIP entries, or undecodable bytes are not embedded; alt text is exported in brackets.
+- ZIP import auto-selects the most likely Markdown file. When the archive contains more than one Markdown file, a picker appears so a different file can be chosen without re-loading the ZIP.
 - GIF files are embedded as image assets. Animation behavior depends on the Word processor.
 - Raw HTML is treated as text and is not converted to Word elements.
 - Task list checkboxes are exported as normal list text.

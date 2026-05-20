@@ -58,10 +58,11 @@ type RenderContext = {
 
 type EmbeddedImage = {
   asset: MarkdownImageAsset;
-  docPrId: number;
   relationshipId: string;
   target: string;
 };
+
+type ImageDrawing = EmbeddedImage & { docPrId: number };
 
 type RenderOptions = {
   quote?: boolean;
@@ -313,8 +314,15 @@ function paragraphPropertiesXml(options: {
 
 function spanXml(span: RichTextSpan, context: RenderContext): string {
   if (span.image) {
-    const image = embeddedImageForSpan(span, context);
-    return image ? imageRunXml(image, span.image.alt) : runXml({ ...span, image: undefined, text: `[${span.image.alt || "image"}]` }, context);
+    const drawing = embeddedImageForSpan(span, context);
+    const imageRun = drawing
+      ? imageRunXml(drawing, span.image.alt)
+      : runXml({ ...span, image: undefined, link: undefined, text: `[${span.image.alt || "image"}]` }, context, Boolean(span.link));
+    if (!span.link) {
+      return imageRun;
+    }
+    const linkId = hyperlinkRelationshipId(span.link, context);
+    return `<w:hyperlink r:id="${attr(linkId)}" w:history="1">${imageRun}</w:hyperlink>`;
   }
 
   const run = runXml(span, context);
@@ -326,7 +334,7 @@ function spanXml(span: RichTextSpan, context: RenderContext): string {
   return `<w:hyperlink r:id="${attr(linkId)}" w:history="1">${runXml({ ...span, link: undefined }, context, true)}</w:hyperlink>`;
 }
 
-function embeddedImageForSpan(span: RichTextSpan, context: RenderContext): EmbeddedImage | undefined {
+function embeddedImageForSpan(span: RichTextSpan, context: RenderContext): ImageDrawing | undefined {
   if (!span.image) {
     return undefined;
   }
@@ -335,30 +343,29 @@ function embeddedImageForSpan(span: RichTextSpan, context: RenderContext): Embed
     return undefined;
   }
 
-  const existing = context.imageIds.get(asset.path);
-  if (existing) {
-    return existing;
+  let registration = context.imageIds.get(asset.path);
+  if (!registration) {
+    const target = nextImageTarget(asset, context);
+    registration = {
+      asset,
+      relationshipId: nextRelationshipId(context.relationships),
+      target,
+    };
+    context.imageIds.set(asset.path, registration);
+    context.embeddedImages.push(registration);
+    context.relationships.push({
+      id: registration.relationshipId,
+      type: `${DOC_REL_NS}/image`,
+      target,
+    });
   }
 
-  const target = nextImageTarget(asset, context);
-  const embedded: EmbeddedImage = {
-    asset,
-    docPrId: context.nextDocPrId,
-    relationshipId: nextRelationshipId(context.relationships),
-    target,
-  };
+  const docPrId = context.nextDocPrId;
   context.nextDocPrId += 1;
-  context.imageIds.set(asset.path, embedded);
-  context.embeddedImages.push(embedded);
-  context.relationships.push({
-    id: embedded.relationshipId,
-    type: `${DOC_REL_NS}/image`,
-    target,
-  });
-  return embedded;
+  return { ...registration, docPrId };
 }
 
-function imageRunXml(image: EmbeddedImage, alt: string): string {
+function imageRunXml(image: ImageDrawing, alt: string): string {
   const size = imageSizeEmu(image.asset);
   const descr = attr(alt || image.asset.fileName);
   const name = attr(image.asset.fileName);

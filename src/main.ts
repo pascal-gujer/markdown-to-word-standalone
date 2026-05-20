@@ -1,7 +1,7 @@
 import { buildStyleMap } from "./docx/styleMapper";
 import { generateDocxBlob } from "./docx/generateDocx";
 import { readTemplateFile, type TemplateInfo } from "./docx/templateReader";
-import { applyI18nToDom, formatList, getCurrentLocale, hasTranslationKey, initializeI18n, setLocale, t, type TranslationVars } from "./i18n";
+import { applyI18nToDom, formatList, getCurrentLocale, hasTranslationKey, initializeI18n, plural, setLocale, t, type TranslationVars } from "./i18n";
 import {
   collectMarkdownImageReferences,
   disposeImagePreviewUrls,
@@ -14,7 +14,7 @@ import { installNetworkGuard, runOfflineSelfCheck } from "./security/offlineSelf
 import { ensureDocxFileName, formatInputStats, readTextFile, sampleMarkdown } from "./ui/editor";
 import { renderStyleDiagnostics, renderTemplateStatus, renderWarnings } from "./ui/diagnostics";
 import { renderPreview } from "./ui/preview";
-import { readMarkdownZipFile } from "./ui/zipImport";
+import { extractMarkdownFromZipSource, loadMarkdownZipSource, type MarkdownZipImport, type MarkdownZipSource } from "./ui/zipImport";
 
 type AppState = {
   markdown: string;
@@ -22,19 +22,23 @@ type AppState = {
   parsed: MarkdownParseResult;
   template: TemplateInfo | null;
   exportStatus: ExportStatus;
+  zipSource: MarkdownZipSource | null;
 };
 
+type ExportStatusKind = "" | "error" | "ok" | "warn";
+
 type ExportStatus = {
-  kind: "" | "error" | "ok" | "warn";
-  key?: string;
-  message?: string;
-  vars?: TranslationVars;
+  kind: ExportStatusKind;
+  build: () => string;
 };
 
 const elements = {
+  editorPanel: byId<HTMLElement>("editor-panel"),
   markdownInput: byId<HTMLTextAreaElement>("markdown-input"),
   markdownFileInput: byId<HTMLInputElement>("markdown-file-input"),
   zipFileInput: byId<HTMLInputElement>("zip-file-input"),
+  zipSourceBar: byId<HTMLElement>("zip-source-bar"),
+  zipMarkdownSelect: byId<HTMLSelectElement>("zip-markdown-select"),
   templateFileInput: byId<HTMLInputElement>("template-file-input"),
   languageSelect: byId<HTMLSelectElement>("language-select"),
   loadMarkdownButton: byId<HTMLButtonElement>("load-markdown-button"),
@@ -64,7 +68,8 @@ const state: AppState = {
   images: null,
   parsed: parseMarkdown(""),
   template: null,
-  exportStatus: { key: "status.ready", kind: "" },
+  exportStatus: { kind: "", build: () => t("status.ready") },
+  zipSource: null,
 };
 
 bindEvents();
@@ -100,12 +105,7 @@ function bindEvents(): void {
     const file = elements.markdownFileInput.files?.[0];
     if (!file) return;
     try {
-      setImageBundle(null);
-      state.markdown = await readTextFile(file);
-      elements.markdownInput.value = state.markdown;
-      updateParsed();
-      renderAll();
-      setExportStatusKey("status.file_loaded", "ok", { fileName: file.name });
+      await loadMarkdownFile(file);
     } catch (error) {
       setExportError(error);
     } finally {
@@ -117,24 +117,9 @@ function bindEvents(): void {
     const file = elements.zipFileInput.files?.[0];
     if (!file) return;
     try {
-      const imported = await readMarkdownZipFile(file);
-      setImageBundle(imported.imageBundle);
-      state.markdown = imported.markdown;
-      elements.markdownInput.value = state.markdown;
-      updateParsed();
-      renderAll();
-      setZipImportStatus(file.name, imported.markdownPath, imported.imageBundle.assets.length, [
-        imported.markdownFileCount > 1
-          ? t("zip.note.multiple_markdown", { count: imported.markdownFileCount, markdownPath: imported.markdownPath })
-          : "",
-        imported.missingReferences.length
-          ? t("zip.note.missing_images", { count: imported.missingReferences.length })
-          : "",
-        imported.unsupportedReferences.length
-          ? t("zip.note.unsupported_images", { count: imported.unsupportedReferences.length })
-          : "",
-      ].filter(Boolean));
+      await loadZipFile(file);
     } catch (error) {
+      setZipSource(null);
       setImageBundle(null);
       setExportError(error);
     } finally {
@@ -142,7 +127,17 @@ function bindEvents(): void {
     }
   });
 
+  elements.zipMarkdownSelect.addEventListener("change", async () => {
+    if (!state.zipSource) return;
+    try {
+      await applyZipExtraction(state.zipSource, elements.zipMarkdownSelect.value);
+    } catch (error) {
+      setExportError(error);
+    }
+  });
+
   elements.sampleButton.addEventListener("click", () => {
+    setZipSource(null);
     setImageBundle(null);
     state.markdown = sampleMarkdown(t);
     elements.markdownInput.value = state.markdown;
@@ -152,6 +147,7 @@ function bindEvents(): void {
   });
 
   elements.clearButton.addEventListener("click", () => {
+    setZipSource(null);
     setImageBundle(null);
     state.markdown = "";
     elements.markdownInput.value = "";
@@ -159,6 +155,8 @@ function bindEvents(): void {
     renderAll();
     setExportStatusKey("status.ready", "");
   });
+
+  bindDropTarget(elements.editorPanel);
 
   elements.refreshPreviewButton.addEventListener("click", () => {
     updateParsed();
@@ -279,6 +277,166 @@ function setImageBundle(bundle: MarkdownImageBundle | null): void {
   }
 }
 
+function setZipSource(source: MarkdownZipSource | null): void {
+  state.zipSource = source;
+  renderZipSourceBar();
+}
+
+function renderZipSourceBar(): void {
+  const source = state.zipSource;
+  if (!source || source.markdownPaths.length <= 1) {
+    elements.zipSourceBar.hidden = true;
+    elements.zipMarkdownSelect.innerHTML = "";
+    return;
+  }
+
+  elements.zipSourceBar.hidden = false;
+  elements.zipMarkdownSelect.innerHTML = "";
+  for (const path of source.markdownPaths) {
+    const option = document.createElement("option");
+    option.value = path;
+    option.textContent = path;
+    elements.zipMarkdownSelect.append(option);
+  }
+}
+
+async function loadMarkdownFile(file: File): Promise<void> {
+  setZipSource(null);
+  setImageBundle(null);
+  state.markdown = await readTextFile(file);
+  elements.markdownInput.value = state.markdown;
+  setFilenameFromSource(file.name);
+  updateParsed();
+  renderAll();
+  setExportStatusKey("status.file_loaded", "ok", { fileName: file.name });
+}
+
+async function loadZipFile(file: File): Promise<void> {
+  const source = await loadMarkdownZipSource(file);
+  setZipSource(source);
+  await applyZipExtraction(source, source.preferredPath);
+}
+
+async function applyZipExtraction(source: MarkdownZipSource, markdownPath: string): Promise<void> {
+  const imported = await extractMarkdownFromZipSource(source, markdownPath);
+  setImageBundle(imported.imageBundle);
+  state.markdown = imported.markdown;
+  elements.markdownInput.value = state.markdown;
+  elements.zipMarkdownSelect.value = markdownPath;
+  setFilenameFromSource(markdownPath);
+  updateParsed();
+  renderAll();
+  setZipImportStatus(imported);
+}
+
+function setZipImportStatus(imported: MarkdownZipImport): void {
+  setExportStatus("ok", () => {
+    const fileName = imported.imageBundle.sourceFileName;
+    const imageCount = imported.imageBundle.assets.length;
+    const notes = collectZipImportNotes(imported);
+    const baseKey = notes.length ? "status.zip_loaded_with_notes" : "status.zip_loaded";
+    return plural(baseKey, imageCount, {
+      fileName,
+      markdownPath: imported.markdownPath,
+      notes: notes.join(" "),
+    });
+  });
+}
+
+function collectZipImportNotes(imported: MarkdownZipImport): string[] {
+  const notes: string[] = [];
+  if (imported.markdownFileCount > 1) {
+    notes.push(t("zip.note.multiple_markdown", {
+      count: imported.markdownFileCount,
+      markdownPath: imported.markdownPath,
+    }));
+  }
+  if (imported.missingReferences.length) {
+    notes.push(plural("zip.note.missing_images", imported.missingReferences.length, {
+      examples: formatExamples(imported.missingReferences),
+    }));
+  }
+  if (imported.unsupportedReferences.length) {
+    notes.push(plural("zip.note.unsupported_images", imported.unsupportedReferences.length, {
+      examples: formatExamples(imported.unsupportedReferences),
+    }));
+  }
+  if (imported.unreadableReferences.length) {
+    notes.push(plural("zip.note.unreadable_images", imported.unreadableReferences.length, {
+      examples: formatExamples(imported.unreadableReferences),
+    }));
+  }
+  return notes;
+}
+
+function formatExamples(paths: string[], maxExamples = 3): string {
+  return paths.slice(0, maxExamples).join(", ");
+}
+
+function setFilenameFromSource(sourcePath: string): void {
+  const base = sourcePath.replace(/^.*[\\/]/, "").replace(/\.[^.]+$/, "");
+  if (!base) return;
+  elements.filenameInput.value = ensureDocxFileName(base);
+}
+
+function bindDropTarget(target: HTMLElement): void {
+  let dragDepth = 0;
+
+  target.addEventListener("dragenter", (event) => {
+    if (!hasFileTransfer(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepth += 1;
+    target.classList.add("is-drop-target");
+  });
+
+  target.addEventListener("dragover", (event) => {
+    if (!hasFileTransfer(event.dataTransfer)) return;
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "copy";
+    }
+  });
+
+  target.addEventListener("dragleave", () => {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (dragDepth === 0) {
+      target.classList.remove("is-drop-target");
+    }
+  });
+
+  target.addEventListener("drop", async (event) => {
+    if (!hasFileTransfer(event.dataTransfer)) return;
+    event.preventDefault();
+    dragDepth = 0;
+    target.classList.remove("is-drop-target");
+    const file = event.dataTransfer?.files?.[0];
+    if (!file) return;
+    try {
+      if (isZipFile(file)) {
+        await loadZipFile(file);
+      } else {
+        await loadMarkdownFile(file);
+      }
+    } catch (error) {
+      if (isZipFile(file)) {
+        setZipSource(null);
+      }
+      setImageBundle(null);
+      setExportError(error);
+    }
+  });
+}
+
+function hasFileTransfer(transfer: DataTransfer | null): boolean {
+  if (!transfer) return false;
+  return Array.from(transfer.types || []).includes("Files");
+}
+
+function isZipFile(file: File): boolean {
+  const lower = file.name.toLowerCase();
+  return lower.endsWith(".zip") || /zip/i.test(file.type);
+}
+
 function downloadBlob(blob: Blob, fileName: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -296,18 +454,13 @@ function applyStaticI18n(): void {
   elements.languageSelect.value = getCurrentLocale();
 }
 
-function setExportStatusKey(key: string, kind: "" | "ok" | "warn" | "error", vars?: TranslationVars): void {
-  state.exportStatus = { key, kind, vars };
+function setExportStatus(kind: ExportStatusKind, build: () => string): void {
+  state.exportStatus = { kind, build };
   renderExportStatus();
 }
 
-function setZipImportStatus(fileName: string, markdownPath: string, imageCount: number, notes: string[]): void {
-  setExportStatusKey(notes.length ? "status.zip_loaded_with_notes" : "status.zip_loaded", "ok", {
-    count: imageCount,
-    fileName,
-    markdownPath,
-    notes: notes.join(" "),
-  });
+function setExportStatusKey(key: string, kind: ExportStatusKind, vars?: TranslationVars): void {
+  setExportStatus(kind, () => t(key, vars));
 }
 
 function setExportError(error: unknown): void {
@@ -323,7 +476,7 @@ function setExportError(error: unknown): void {
 function renderExportStatus(): void {
   const status = state.exportStatus;
   elements.exportStatus.className = status.kind ? `message ${status.kind}` : "message";
-  elements.exportStatus.textContent = status.key ? t(status.key, status.vars) : status.message || "";
+  elements.exportStatus.textContent = status.build();
 }
 
 function byId<T extends HTMLElement>(id: string): T {

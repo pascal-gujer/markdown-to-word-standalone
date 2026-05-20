@@ -8,7 +8,7 @@
   </head>
   <body>
     <a class="skip-link" href="#markdown-input" data-i18n="a11y.skip_to_editor">Skip to editor</a>
-    <a class="github-ribbon" href="https:&#x2f;&#x2f;github.com&#x2f;sponsors&#x2f;pascal-gujer" target="_blank" rel="noopener noreferrer" data-i18n-aria-label="sponsor.aria" aria-label="Sponsor this project on GitHub">
+    <a class="github-ribbon" href="https://github.com/sponsors/pascal-gujer" target="_blank" rel="noopener noreferrer" data-i18n-aria-label="sponsor.aria" aria-label="Sponsor this project on GitHub">
       <svg class="github-ribbon-heart" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
         <path d="M8 14.25l-.78-.7C3.04 9.8.5 7.52.5 4.75A3.25 3.25 0 0 1 3.8 1.5c1.56 0 2.57.9 3.2 1.72C7.63 2.4 8.64 1.5 10.2 1.5a3.25 3.25 0 0 1 3.3 3.25c0 2.77-2.54 5.05-6.72 8.8l-.78.7z"/>
       </svg>
@@ -36,7 +36,7 @@
       </header>
 
       <main id="app" class="workspace" aria-live="polite">
-        <section class="panel step-panel editor-panel" aria-labelledby="step-1-title">
+        <section class="panel step-panel editor-panel" id="editor-panel" aria-labelledby="step-1-title">
           <div class="panel-header">
             <div>
               <span class="step-kicker" data-i18n="step.1.kicker">Step 1</span>
@@ -52,6 +52,10 @@
           <div class="panel-body">
             <input id="markdown-file-input" class="sr-only" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" />
             <input id="zip-file-input" class="sr-only" type="file" accept=".zip,application/zip,application/x-zip-compressed" />
+            <div id="zip-source-bar" class="zip-source-bar" hidden>
+              <label class="field-label" for="zip-markdown-select" data-i18n="zip.source.label">Markdown file in ZIP</label>
+              <select id="zip-markdown-select" class="select-control"></select>
+            </div>
             <label class="field-label" for="markdown-input" data-i18n="field.markdown_input">Markdown input</label>
             <textarea id="markdown-input" spellcheck="false" data-i18n-placeholder="placeholder.markdown_input" placeholder="# Paste Markdown here"></textarea>
             <div class="editor-meta">

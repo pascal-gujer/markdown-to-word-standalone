@@ -344,6 +344,23 @@ h1 {
   font-weight: 700;
 }
 
+.zip-source-bar {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.zip-source-bar[hidden] {
+  display: none;
+}
+
+.editor-panel.is-drop-target {
+  outline: 2px dashed var(--accent, #0f766e);
+  outline-offset: -8px;
+  background: var(--accent-soft, #eaf6f4);
+}
+
 .toggle {
   display: inline-flex;
   align-items: center;

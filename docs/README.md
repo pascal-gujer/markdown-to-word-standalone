@@ -35,13 +35,13 @@ Build the project, then move or open `dist/md-to-docx.html` on the offline machi
 
 ## Basic Workflow
 
-1. Paste Markdown into the editor, load a local `.md`, `.markdown`, or `.txt` file, or load a `.zip` bundle containing Markdown plus referenced images.
+1. Paste Markdown into the editor, load a local `.md`, `.markdown`, or `.txt` file, or load a `.zip` bundle containing Markdown plus referenced images. The editor panel also accepts drag-and-drop of a Markdown file or a ZIP.
 2. Optionally load a `.docx` or `.dotx` style template.
-3. Set the output file name and export the `.docx`.
+3. Set the output file name (pre-filled from the loaded source) and export the `.docx`.
 
 Files are processed locally in the browser and are not uploaded.
 
-ZIP import is an additional workflow, not a replacement for the editor. The app chooses the best Markdown file in the archive and resolves image references relative to that file. Supported embedded image formats are `.png`, `.jpg`, `.jpeg`, and `.gif`.
+ZIP import is an additional workflow, not a replacement for the editor. The app auto-selects the best Markdown file in the archive and resolves image references relative to that file. When the archive contains more than one Markdown file, a picker lets you switch to a different file without re-loading the ZIP. Supported embedded image formats are `.png`, `.jpg`, `.jpeg`, and `.gif`. Missing, unsupported, and undecodable image references are reported with example paths in the status bar.
 
 ## Template Support
 

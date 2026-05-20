@@ -52,6 +52,34 @@ export function t(key: string, vars: TranslationVars = {}): string {
   return translateForLocale(currentLocale, key, vars);
 }
 
+export function plural(baseKey: string, count: number, vars: TranslationVars = {}): string {
+  const category = pluralCategory(currentLocale, count);
+  const localized = `${baseKey}.${category}`;
+  if (hasTranslationKey(localized)) {
+    return t(localized, { count, ...vars });
+  }
+  const otherKey = `${baseKey}.other`;
+  if (hasTranslationKey(otherKey)) {
+    return t(otherKey, { count, ...vars });
+  }
+  return t(baseKey, { count, ...vars });
+}
+
+const pluralRulesCache = new Map<LocaleCode, Intl.PluralRules>();
+
+function pluralCategory(locale: LocaleCode, count: number): Intl.LDMLPluralRule {
+  let rules = pluralRulesCache.get(locale);
+  if (!rules) {
+    try {
+      rules = new Intl.PluralRules(locale);
+      pluralRulesCache.set(locale, rules);
+    } catch (_error) {
+      return count === 1 ? "one" : "other";
+    }
+  }
+  return rules.select(count);
+}
+
 export function translateForLocale(locale: LocaleCode, key: string, vars: TranslationVars = {}): string {
   const map = translations[locale] as Record<string, string>;
   const fallback = translations[DEFAULT_LOCALE] as Record<string, string>;

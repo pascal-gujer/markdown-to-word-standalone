@@ -11,18 +11,27 @@ import {
   type MarkdownImageBundle,
 } from "../markdown/imageBundle";
 
+export type MarkdownZipSource = {
+  fileName: string;
+  zip: JSZip;
+  markdownPaths: string[];
+  preferredPath: string;
+};
+
 export type MarkdownZipImport = {
   markdown: string;
   markdownPath: string;
+  markdownPaths: string[];
   markdownFileCount: number;
   imageBundle: MarkdownImageBundle;
   missingReferences: string[];
   unsupportedReferences: string[];
+  unreadableReferences: string[];
 };
 
 const markdownExtensions = new Set([".md", ".markdown", ".txt"]);
 
-export async function readMarkdownZipFile(file: File): Promise<MarkdownZipImport> {
+export async function loadMarkdownZipSource(file: File): Promise<MarkdownZipSource> {
   let zip: JSZip;
   try {
     zip = await JSZip.loadAsync(await file.arrayBuffer());
@@ -33,16 +42,30 @@ export async function readMarkdownZipFile(file: File): Promise<MarkdownZipImport
   const markdownPaths = Object.keys(zip.files)
     .filter((path) => !zip.files[path].dir && isMarkdownPath(path))
     .sort(compareMarkdownCandidates);
-  const markdownPath = markdownPaths[0];
-  if (!markdownPath) {
+  const preferredPath = markdownPaths[0];
+  if (!preferredPath) {
     throw new Error("error.zip_no_markdown");
   }
 
-  const markdown = await zip.file(markdownPath)!.async("string");
+  return {
+    fileName: file.name,
+    zip,
+    markdownPaths,
+    preferredPath,
+  };
+}
+
+export async function extractMarkdownFromZipSource(source: MarkdownZipSource, markdownPath: string): Promise<MarkdownZipImport> {
+  if (!source.markdownPaths.includes(markdownPath)) {
+    throw new Error("error.zip_no_markdown");
+  }
+
+  const markdown = await source.zip.file(markdownPath)!.async("string");
   const markdownBasePath = directoryName(markdownPath);
   const references = uniqueImageReferences(collectMarkdownImageReferences(markdown));
   const missingReferences: string[] = [];
   const unsupportedReferences: string[] = [];
+  const unreadableReferences: string[] = [];
   const assets: MarkdownImageAsset[] = [];
 
   for (const reference of references) {
@@ -58,7 +81,7 @@ export async function readMarkdownZipFile(file: File): Promise<MarkdownZipImport
       continue;
     }
 
-    const entry = findZipFile(zip, resolvedPath);
+    const entry = findZipFile(source.zip, resolvedPath);
     if (!entry) {
       missingReferences.push(reference.src);
       continue;
@@ -67,7 +90,7 @@ export async function readMarkdownZipFile(file: File): Promise<MarkdownZipImport
     const data = await entry.async("uint8array");
     const dimensions = readImageDimensions(data, type.extension);
     if (!dimensions || dimensions.widthPx <= 0 || dimensions.heightPx <= 0) {
-      unsupportedReferences.push(reference.src);
+      unreadableReferences.push(reference.src);
       continue;
     }
 
@@ -85,16 +108,26 @@ export async function readMarkdownZipFile(file: File): Promise<MarkdownZipImport
   return {
     markdown,
     markdownPath,
-    markdownFileCount: markdownPaths.length,
+    markdownPaths: source.markdownPaths,
+    markdownFileCount: source.markdownPaths.length,
     imageBundle: {
-      sourceFileName: file.name,
+      sourceFileName: source.fileName,
       markdownPath,
       markdownBasePath,
       assets,
     },
     missingReferences,
     unsupportedReferences,
+    unreadableReferences,
   };
+}
+
+export async function readMarkdownZipFile(file: File, markdownPath?: string): Promise<MarkdownZipImport> {
+  const source = await loadMarkdownZipSource(file);
+  const targetPath = markdownPath && source.markdownPaths.includes(markdownPath)
+    ? markdownPath
+    : source.preferredPath;
+  return extractMarkdownFromZipSource(source, targetPath);
 }
 
 function isMarkdownPath(path: string): boolean {

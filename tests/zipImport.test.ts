@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import JSZip from "jszip";
 import { readImageDimensions } from "../src/markdown/imageBundle";
-import { readMarkdownZipFile } from "../src/ui/zipImport";
+import { extractMarkdownFromZipSource, loadMarkdownZipSource, readMarkdownZipFile } from "../src/ui/zipImport";
 
 describe("ZIP Markdown import", () => {
   it("loads Markdown and supported referenced images from a ZIP file", async () => {
@@ -14,17 +14,20 @@ describe("ZIP Markdown import", () => {
       "![Badge](images/badge.gif)",
       "![Missing](images/missing.jpg)",
       "![Unsupported](images/vector.svg)",
+      "![Corrupt](images/corrupt.png)",
     ].join("\n"));
     zip.file("notes.txt", "This is not the preferred Markdown file.");
     zip.file("images/logo.png", tinyPngBytes());
     zip.file("images/photo.jpg", minimalJpegBytes(3, 2));
     zip.file("images/badge.gif", tinyGifBytes());
     zip.file("images/vector.svg", "<svg/>");
+    zip.file("images/corrupt.png", Uint8Array.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]));
 
     const imported = await readMarkdownZipFile(await zipFile(zip, "bundle.zip"));
 
     expect(imported.markdownPath).toBe("report.md");
     expect(imported.markdownFileCount).toBe(2);
+    expect(imported.markdownPaths).toEqual(["report.md", "notes.txt"]);
     expect(imported.markdown).toContain("# Report");
     expect(imported.imageBundle.assets).toHaveLength(3);
     expect(imported.imageBundle.assets[0]).toMatchObject({
@@ -47,6 +50,7 @@ describe("ZIP Markdown import", () => {
     });
     expect(imported.missingReferences).toEqual(["images/missing.jpg"]);
     expect(imported.unsupportedReferences).toEqual(["images/vector.svg"]);
+    expect(imported.unreadableReferences).toEqual(["images/corrupt.png"]);
   });
 
   it("rejects ZIP files without Markdown content", async () => {
@@ -60,6 +64,32 @@ describe("ZIP Markdown import", () => {
     expect(readImageDimensions(tinyPngBytes(), "png")).toEqual({ widthPx: 1, heightPx: 1 });
     expect(readImageDimensions(tinyGifBytes(), "gif")).toEqual({ widthPx: 1, heightPx: 1 });
     expect(readImageDimensions(minimalJpegBytes(3, 2), "jpg")).toEqual({ widthPx: 3, heightPx: 2 });
+  });
+
+  it("lets callers pick a non-preferred Markdown file from a multi-MD ZIP", async () => {
+    const zip = new JSZip();
+    zip.file("docs/index.md", "# Index page");
+    zip.file("docs/chapter-2.md", "# Chapter Two\n\n![Pic](pic.png)");
+    zip.file("docs/pic.png", tinyPngBytes());
+
+    const source = await loadMarkdownZipSource(await zipFile(zip, "manual.zip"));
+    expect(source.markdownPaths).toContain("docs/index.md");
+    expect(source.markdownPaths).toContain("docs/chapter-2.md");
+    expect(source.preferredPath).toBe("docs/index.md");
+
+    const chapter = await extractMarkdownFromZipSource(source, "docs/chapter-2.md");
+    expect(chapter.markdownPath).toBe("docs/chapter-2.md");
+    expect(chapter.markdown).toContain("Chapter Two");
+    expect(chapter.imageBundle.assets).toHaveLength(1);
+    expect(chapter.imageBundle.assets[0].path).toBe("docs/pic.png");
+  });
+
+  it("rejects a markdown path that is not present in the ZIP source", async () => {
+    const zip = new JSZip();
+    zip.file("only.md", "# only");
+
+    const source = await loadMarkdownZipSource(await zipFile(zip, "single.zip"));
+    await expect(extractMarkdownFromZipSource(source, "not-there.md")).rejects.toThrow("error.zip_no_markdown");
   });
 });
 

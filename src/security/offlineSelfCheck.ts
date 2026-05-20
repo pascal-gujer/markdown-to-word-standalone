@@ -8,7 +8,7 @@ export type OfflineSelfCheckMessage = {
   vars?: Record<string, number | string>;
 };
 
-const remoteUrlPattern = /^https?:\/\//i;
+const remoteUrlPattern = /^(?:https?:)?\/\//i;
 
 export function installNetworkGuard(remoteMessage: () => string): void {
   guardFetch(remoteMessage);
@@ -17,11 +17,8 @@ export function installNetworkGuard(remoteMessage: () => string): void {
 
 export function runOfflineSelfCheck(): OfflineSelfCheck {
   const messages: OfflineSelfCheckMessage[] = [];
-  const externalNodes = Array.from(document.querySelectorAll<HTMLElement>("[src], [href]"))
-    .filter((node) => {
-      const value = node.getAttribute("src") || node.getAttribute("href") || "";
-      return remoteUrlPattern.test(value) || value.startsWith("//");
-    });
+  const externalNodes = Array.from(document.querySelectorAll<Element>("[src], [srcset], [poster], link[href], object[data]"))
+    .filter(isExternalRuntimeReference);
 
   if (externalNodes.length) {
     messages.push({ key: "offline.external_assets", vars: { count: externalNodes.length } });
@@ -40,6 +37,35 @@ export function runOfflineSelfCheck(): OfflineSelfCheck {
   return { ok: messages.length === 1 && messages[0].key === "offline.ok", messages };
 }
 
+export function isExternalRuntimeReference(node: Element): boolean {
+  const tagName = node.tagName.toLowerCase();
+
+  if (tagName === "a") {
+    return false;
+  }
+
+  if (
+    isRemoteUrl(node.getAttribute("src") || "") ||
+    isRemoteUrl(node.getAttribute("poster") || "") ||
+    isRemoteUrl(node.getAttribute("data") || "") ||
+    srcsetHasRemoteUrl(node.getAttribute("srcset") || "")
+  ) {
+    return true;
+  }
+
+  return tagName === "link" && isRemoteUrl(node.getAttribute("href") || "");
+}
+
+function isRemoteUrl(value: string): boolean {
+  return remoteUrlPattern.test(value.trim());
+}
+
+function srcsetHasRemoteUrl(srcset: string): boolean {
+  return srcset
+    .split(",")
+    .some((candidate) => isRemoteUrl(candidate.trim().split(/\s+/)[0] || ""));
+}
+
 function guardFetch(remoteMessage: () => string): void {
   if (!("fetch" in window)) {
     return;
@@ -48,7 +74,7 @@ function guardFetch(remoteMessage: () => string): void {
   const nativeFetch = window.fetch.bind(window);
   window.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === "string" || input instanceof URL ? String(input) : input.url;
-    if (remoteUrlPattern.test(url)) {
+    if (isRemoteUrl(url)) {
       return Promise.reject(new Error(remoteMessage()));
     }
     return nativeFetch(input, init);
@@ -68,7 +94,7 @@ function guardXmlHttpRequest(remoteMessage: () => string): void {
     username?: string | null,
     password?: string | null,
   ): void {
-    if (remoteUrlPattern.test(String(url))) {
+    if (isRemoteUrl(String(url))) {
       throw new Error(remoteMessage());
     }
     Reflect.apply(nativeOpen, this, [method, url, async, username, password]);
