@@ -37,15 +37,19 @@ jobs:
       - name: Build single-file app
         run: npm run build
 
-      - name: Create release from pushed tag
+      - name: Create or update release from pushed tag
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG_NAME" dist/md-to-docx.html \
-            --title "$TAG_NAME" \
-            --notes "Initial public release of Markdown to Word Offline as a standalone, fully offline HTML application."
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            gh release upload "$TAG_NAME" dist/md-to-docx.html --clobber
+          else
+            gh release create "$TAG_NAME" dist/md-to-docx.html \
+              --title "$TAG_NAME" \
+              --notes "Standalone offline HTML release for Markdown to Word Offline."
+          fi
 
       - name: Upload built HTML to existing release
         if: github.event_name == 'release'
